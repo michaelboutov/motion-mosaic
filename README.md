@@ -4,10 +4,14 @@ MotionMosaic is an immersive, AI-powered creative studio that transforms text de
 
 ## ✨ Features
 
-- **AI Image Generation**: Generate high-quality image variations in batches using advanced AI models (Midjourney integration).
+- **AI Image Generation**: Generate high-quality images using Midjourney integration via Kie.ai API.
+- **Batch Generation**: Create multiple image variations simultaneously with customizable aspect ratios and parameters.
 - **Motion Studio**: A dedicated workspace to view, edit, and animate your generated images.
-- **Video Generation**: Transform your static images into captivating videos.
-- **Nano Banana Editing**: Advanced image editing capabilities for fine-tuning your creations.
+- **Video Generation**: Transform static images into captivating videos with AI-powered motion.
+- **Video Upscaling**: Enhance video quality with AI upscaling capabilities.
+- **Nano Banana Pro Editing**: Advanced image editing and redrawing capabilities for fine-tuning creations.
+- **Viral Architect**: Create variations of images optimized for viral content.
+- **Real-time Processing**: Webhook callbacks and polling for async task status updates.
 - **Interactive UI**: Fluid animations and transitions powered by Framer Motion.
 - **Responsive Design**: A beautiful, dark-themed interface that works seamlessly across devices.
 
@@ -18,7 +22,9 @@ MotionMosaic is an immersive, AI-powered creative studio that transforms text de
 - **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
 - **Animations**: [Framer Motion](https://www.framer.com/motion/)
 - **State Management**: [Zustand](https://github.com/pmndrs/zustand)
+- **UI Components**: [Radix UI](https://www.radix-ui.com/)
 - **Icons**: [Lucide React](https://lucide.dev/)
+- **AI Backend**: [Kie.ai API](https://kie.ai/)
 - **Language**: TypeScript
 
 ## 🚀 Getting Started
@@ -56,16 +62,42 @@ MotionMosaic is an immersive, AI-powered creative studio that transforms text de
 
 4. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+### Environment Variables
+
+Create a `.env.local` file in the root directory with the following variables:
+
+```bash
+# Optional: Set the base URL for webhooks (defaults to http://localhost:3000)
+NEXT_PUBLIC_BASE_URL=https://your-domain.com
+```
+
+**Note**: The Kie.ai API key is provided by the user at runtime through the UI and stored in the application state (Zustand store). No API keys need to be hardcoded in environment files.
+
 ## 📁 Project Structure
 
 ```
 motion-mosaic/
 ├── src/
-│   ├── app/          # Next.js App Router pages and API routes
-│   ├── components/   # Reusable UI components
-│   └── lib/          # Utilities and global state (Zustand store)
-├── public/           # Static assets
-└── package.json      # Project dependencies and scripts
+│   ├── app/              # Next.js App Router pages and API routes
+│   │   ├── api/          # API endpoints for AI generation
+│   │   │   ├── generate-batch/      # Batch image generation
+│   │   │   ├── generate-images/     # Single image generation
+│   │   │   ├── generate-nano/       # Nano Banana Pro editing
+│   │   │   ├── generate-video/      # Video generation
+│   │   │   ├── upscale-video/       # Video upscaling
+│   │   │   ├── architect/           # Viral Architect variations
+│   │   │   └── */callback/          # Webhook handlers
+│   │   ├── page.tsx      # Main application page
+│   │   ├── layout.tsx    # Root layout
+│   │   └── globals.css   # Global styles
+│   ├── components/       # Reusable UI components
+│   │   ├── MotionStudio.tsx
+│   │   ├── ViralArchitect.tsx
+│   │   └── ...
+│   └── lib/              # Utilities and global state (Zustand store)
+├── public/               # Static assets
+├── netlify.toml          # Netlify deployment configuration
+└── package.json          # Project dependencies and scripts
 ```
 
 ## 🤝 Contributing

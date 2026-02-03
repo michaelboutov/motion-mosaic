@@ -1,0 +1,114 @@
+'use client'
+
+import { useState, useRef, useEffect } from 'react'
+import { useAppStore } from '@/lib/store'
+import { SlidersHorizontal, Sparkles } from 'lucide-react'
+
+export default function PromptInput() {
+  const { prompt, setPrompt, isGeneratingImages, apiKey } = useAppStore()
+  const [showSettings, setShowSettings] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+    }
+  }, [prompt])
+
+  const handleGenerate = async () => {
+    if (!prompt.trim() || isGeneratingImages || !apiKey) return
+    
+    // This will trigger the image generation
+    // We'll implement this logic in the main component
+    window.dispatchEvent(new CustomEvent('generate-images', { detail: { prompt } }))
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleGenerate()
+    }
+  }
+
+  return (
+    <>
+      <div className="fixed bottom-0 left-0 w-full p-4 bg-zinc-950/80 backdrop-blur-xl border-t border-zinc-800 z-40">
+        <div className="max-w-3xl mx-auto flex gap-3">
+          <textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isGeneratingImages}
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none resize-none h-14 min-h-[56px] max-h-32 disabled:opacity-50"
+            placeholder="Describe your vision (e.g., 'Cyberpunk street food vendor in rain')..."
+          />
+          
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-3 text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
+            disabled={isGeneratingImages}
+          >
+            <SlidersHorizontal className="w-6 h-6" />
+          </button>
+          
+          <button
+            onClick={handleGenerate}
+            disabled={!prompt.trim() || isGeneratingImages || !apiKey}
+            className="bg-white text-black font-bold px-6 py-3 rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 flex items-center gap-2"
+          >
+            {isGeneratingImages ? (
+              <>
+                <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                Generate
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="fixed bottom-24 left-4 right-4 max-w-sm mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-4 z-30 shadow-[0_0_50px_rgba(139,92,246,0.1)]">
+          <h3 className="text-white font-medium mb-3">Generation Settings</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="text-zinc-400 text-sm">Aspect Ratio</label>
+              <select className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white">
+                <option value="16:9">16:9 (Widescreen)</option>
+                <option value="1:1">1:1 (Square)</option>
+                <option value="9:16">9:16 (Portrait)</option>
+                <option value="4:3">4:3 (Standard)</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-zinc-400 text-sm">Speed</label>
+              <select className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white">
+                <option value="relaxed">Relaxed</option>
+                <option value="fast">Fast</option>
+                <option value="turbo">Turbo</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-zinc-400 text-sm">Variety</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                step="5"
+                defaultValue="10"
+                className="w-full mt-1"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
