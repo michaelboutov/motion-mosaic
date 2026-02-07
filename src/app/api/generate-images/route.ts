@@ -32,7 +32,18 @@ const taskResults = new Map<string, CallbackData>()
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, apiKey } = await request.json()
+    let body;
+    try {
+      body = await request.json()
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    if (!body) {
+      return NextResponse.json({ error: 'Empty request body' }, { status: 400 })
+    }
+
+    const { prompt, apiKey } = body
 
     if (!prompt || !apiKey) {
       return NextResponse.json(
@@ -111,68 +122,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
-
-// Callback endpoint for Midjourney
-export async function POST_CALLBACK(request: NextRequest) {
-  try {
-    const callbackData = await request.json()
-    
-    if (callbackData.code === 200 && callbackData.data?.resultUrls) {
-      const taskId = callbackData.data.taskId
-      const resultUrls = callbackData.data.resultUrls
-      
-      // Store the result
-      taskResults.set(taskId, {
-        taskId,
-        resultUrls,
-        state: 'success'
-      })
-      
-      // Notify frontend via WebSocket or polling
-      // For now, we'll store it and let the frontend poll
-    } else {
-      // Handle failure
-      const taskId = callbackData.data?.taskId
-      if (taskId) {
-        taskResults.set(taskId, {
-          taskId,
-          resultUrls: [],
-          state: 'fail'
-        })
-      }
-    }
-    
-    return NextResponse.json({ received: true })
-  } catch (error) {
-    console.error('Error in callback:', error)
-    return NextResponse.json(
-      { error: 'Callback processing failed' },
-      { status: 500 }
-    )
-  }
-}
-
-// Polling endpoint for frontend to check task status
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const taskId = searchParams.get('taskId')
-  
-  if (!taskId) {
-    return NextResponse.json(
-      { error: 'Task ID is required' },
-      { status: 400 }
-    )
-  }
-  
-  const result = taskResults.get(taskId)
-  
-  if (!result) {
-    return NextResponse.json({ status: 'pending' })
-  }
-  
-  return NextResponse.json({
-    status: result.state,
-    resultUrls: result.resultUrls
-  })
 }

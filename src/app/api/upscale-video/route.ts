@@ -22,7 +22,18 @@ interface TaskResponse {
 
 export async function POST(request: NextRequest) {
   try {
-    const { taskId }: UpscaleRequest = await request.json()
+    let body: UpscaleRequest;
+    try {
+      body = await request.json()
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    if (!body) {
+      return NextResponse.json({ error: 'Empty request body' }, { status: 400 })
+    }
+
+    const { taskId } = body
     const apiKey = request.headers.get('Authorization')?.replace('Bearer ', '')
 
     if (!taskId || !apiKey) {

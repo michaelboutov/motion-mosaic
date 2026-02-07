@@ -19,7 +19,12 @@ const videoTaskResults = new Map<string, { videoUrl: string; status: 'success' |
 
 export async function POST(request: NextRequest) {
   try {
-    const callback: VideoCallback = await request.json()
+    let callback: VideoCallback;
+    try {
+      callback = await request.json()
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
     
     console.log('Received video callback:', callback)
     

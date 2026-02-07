@@ -3,24 +3,24 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore, Image } from '@/lib/store'
+import { useStudioHandlers } from '@/lib/useStudioHandlers'
+import { startPolling } from '@/lib/usePoll'
 import ApiKeyInput from '@/components/ApiKeyInput'
 import PromptInput from '@/components/PromptInput'
 import ImageGrid from '@/components/ImageGrid'
 import MotionStudio from '@/components/MotionStudio'
 import ParticleBubble from '@/components/ParticleBubble'
 import ViralArchitect from '@/components/ViralArchitect'
-import { LayoutGrid, Clapperboard } from 'lucide-react'
+import { LayoutGrid, Clapperboard, Settings } from 'lucide-react'
 
 export default function Home() {
   const { 
-    apiKey, 
+    kieApiKey, 
     prompt, 
     images, 
     isGeneratingImages, 
     setImages, 
     setIsGeneratingImages,
-    selectedImageId,
-    setSelectedImageId,
     updateImage,
     activeVideoTasks,
     removeVideoTask,
@@ -30,179 +30,139 @@ export default function Home() {
     addImages
   } = useAppStore()
   
-  const [selectedImage, setSelectedImage] = useState<Image | null>(null)
-  const [isStudioOpen, setIsStudioOpen] = useState(false)
+  const { selectedImage, isStudioOpen, handleImageClick, handleCloseStudio } = useStudioHandlers()
   const [viewMode, setViewMode] = useState<'mosaic' | 'architect'>('mosaic')
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
   // Handle nano banana polling
   useEffect(() => {
     if (activeNanoTasks.length === 0) return
 
-    let isMounted = true
-    const pollInterval = 5000 // 5 seconds
-
-    const checkNanoTasks = async () => {
-      if (!isMounted) return
-
-      for (const task of activeNanoTasks) {
-        try {
+    const cancellers = activeNanoTasks.map((task) =>
+      startPolling({
+        intervalMs: 5000,
+        maxAttempts: 60,
+        checkFn: async () => {
           const response = await fetch(`/api/nano-callback?taskId=${task.taskId}`, {
-            headers: {
-              'Authorization': `Bearer ${apiKey}`
-            },
-            cache: 'no-store'
+            headers: { Authorization: `Bearer ${kieApiKey}` },
+            cache: 'no-store',
           })
           const result = await response.json()
 
-          if (!isMounted) return
-
           if (result.status === 'success' && result.imageUrls && result.imageUrls.length > 0) {
-            // Create new image objects
             const newImages: Image[] = result.imageUrls.map((url: string, index: number) => ({
               id: `nano-${task.taskId}-${index}`,
               url,
               status: 'done',
-              prompt: `Nano Banana edit of ${task.sourceImageId}`
+              prompt: `Nano Banana edit of ${task.sourceImageId}`,
             }))
-            
             addImages(newImages)
             removeNanoTask(task.taskId)
+            return 'done'
           } else if (result.status === 'fail') {
             console.error(`Nano task ${task.taskId} failed:`, result.error)
             removeNanoTask(task.taskId)
-            // Optionally notify user of failure
+            return 'done'
           }
-          // If pending, do nothing, will check next interval
-        } catch (error) {
-          console.error(`Error checking nano task ${task.taskId}:`, error)
-        }
-      }
-    }
+          return 'continue'
+        },
+      })
+    )
 
-    const timer = setInterval(checkNanoTasks, pollInterval)
-    
-    // Run immediately on mount/change
-    checkNanoTasks()
-
-    return () => {
-      isMounted = false
-      clearInterval(timer)
-    }
-  }, [activeNanoTasks, apiKey, removeNanoTask, addImages])
+    return () => cancellers.forEach((cancel) => cancel())
+  }, [activeNanoTasks, kieApiKey, removeNanoTask, addImages])
 
   // Handle video generation polling
   useEffect(() => {
     if (activeVideoTasks.length === 0) return
 
-    let isMounted = true
-    const pollInterval = 5000 // 5 seconds
-
-    const checkVideoTasks = async () => {
-      if (!isMounted) return
-
-      for (const task of activeVideoTasks) {
-        try {
+    const cancellers = activeVideoTasks.map((task) =>
+      startPolling({
+        intervalMs: 5000,
+        maxAttempts: 120,
+        checkFn: async () => {
           const response = await fetch(`/api/video-callback?taskId=${task.taskId}`, {
-            headers: {
-              'Authorization': `Bearer ${apiKey}`
-            },
-            cache: 'no-store'
+            headers: { Authorization: `Bearer ${kieApiKey}` },
+            cache: 'no-store',
           })
           const result = await response.json()
-
-          if (!isMounted) return
 
           if (result.status === 'success' && result.videoUrl) {
             setGeneratedVideo(task.imageId, {
               url: result.videoUrl,
               taskId: task.taskId,
-              model: (task as any).model || 'unknown'
+              model: task.model || 'unknown',
             })
             removeVideoTask(task.taskId)
+            return 'done'
           } else if (result.status === 'fail') {
             console.error(`Video task ${task.taskId} failed:`, result.error)
             removeVideoTask(task.taskId)
-            // Optionally notify user of failure
+            return 'done'
           }
-          // If pending, do nothing, will check next interval
-        } catch (error) {
-          console.error(`Error checking video task ${task.taskId}:`, error)
-        }
-      }
-    }
+          return 'continue'
+        },
+      })
+    )
 
-    const timer = setInterval(checkVideoTasks, pollInterval)
+    return () => cancellers.forEach((cancel) => cancel())
+  }, [activeVideoTasks, kieApiKey, removeVideoTask, setGeneratedVideo])
+
+  // Handle image generation triggered by PromptInput
+  const handleGenerate = async (generationPrompt: string) => {
+    if (!kieApiKey || isGeneratingImages) return
+
+    // Initialize with 60 empty slots
+    const emptyImages: Image[] = Array.from({ length: 60 }, (_, i) => ({
+      id: `empty-${i}`,
+      url: '',
+      status: 'loading' as const,
+      prompt: generationPrompt
+    }))
+    setImages(emptyImages)
+    setIsGeneratingImages(true)
     
-    // Run immediately on mount/change
-    checkVideoTasks()
-
-    return () => {
-      isMounted = false
-      clearInterval(timer)
-    }
-  }, [activeVideoTasks, apiKey, removeVideoTask, setGeneratedVideo])
-
-  // Handle image generation
-  useEffect(() => {
-    const handleGenerate = async (event: Event) => {
-      const customEvent = event as CustomEvent
-      if (!apiKey || isGeneratingImages) return
-
-      // Initialize with 60 empty slots
-      const emptyImages: Image[] = Array.from({ length: 60 }, (_, i) => ({
-        id: `empty-${i}`,
-        url: '',
-        status: 'loading' as const,
-        prompt: customEvent.detail.prompt
-      }))
-      setImages(emptyImages)
-      setIsGeneratingImages(true)
-      
-      try {
-        const response = await fetch('/api/generate-images', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            prompt: customEvent.detail.prompt,
-            apiKey
-          })
+    try {
+      const response = await fetch('/api/generate-images', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: generationPrompt,
+          apiKey: kieApiKey
         })
+      })
 
-        const result = await response.json()
+      const result = await response.json()
 
-        if (result.success) {
-          // Identify failed batches (those not in the tasks list)
-          const successfulBatchIndices = new Set(result.tasks.map((t: any) => t.batchIndex))
-          
-          // Mark images from failed batches as error immediately
-          for (let i = 0; i < 15; i++) {
-            if (!successfulBatchIndices.has(i)) {
-              for (let j = 0; j < 4; j++) {
-                const imgIdx = i * 4 + j
-                if (imgIdx < 60) {
-                  updateImage(`empty-${imgIdx}`, { status: 'error' })
-                }
+      if (result.success) {
+        // Identify failed batches (those not in the tasks list)
+        const successfulBatchIndices = new Set(result.tasks.map((t: any) => t.batchIndex))
+        
+        // Mark images from failed batches as error immediately
+        for (let i = 0; i < 15; i++) {
+          if (!successfulBatchIndices.has(i)) {
+            for (let j = 0; j < 4; j++) {
+              const imgIdx = i * 4 + j
+              if (imgIdx < 60) {
+                updateImage(`empty-${imgIdx}`, { status: 'error' })
               }
             }
           }
-
-          // Start polling for results
-          await pollForResults(result.tasks)
-        } else {
-          console.error('Generation failed:', result.error)
-          setIsGeneratingImages(false)
         }
-      } catch (error) {
-        console.error('Error generating images:', error)
+
+        // Start polling for results
+        await pollForResults(result.tasks)
+      } else {
+        console.error('Generation failed:', result.error)
         setIsGeneratingImages(false)
       }
+    } catch (error) {
+      console.error('Error generating images:', error)
+      setIsGeneratingImages(false)
     }
-
-    window.addEventListener('generate-images', handleGenerate)
-    return () => window.removeEventListener('generate-images', handleGenerate)
-  }, [apiKey, isGeneratingImages, setImages, updateImage])
+  }
 
   const pollForResults = async (tasks: any[]) => {
     // Keep track of which tasks are finished so we don't poll them again
@@ -218,7 +178,7 @@ export default function Home() {
         try {
           const response = await fetch(`/api/midjourney-callback?taskId=${task.taskId}`, {
             headers: {
-              'Authorization': `Bearer ${apiKey}`
+              'Authorization': `Bearer ${kieApiKey}`
             },
             cache: 'no-store'
           })
@@ -276,25 +236,23 @@ export default function Home() {
     checkTasks()
   }
 
-  const handleImageClick = (image: Image) => {
-    setSelectedImage(image)
-    setSelectedImageId(image.id)
-    setIsStudioOpen(true)
-  }
-
-  const handleCloseStudio = () => {
-    setIsStudioOpen(false)
-    setSelectedImage(null)
-    setSelectedImageId(null)
-  }
-
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 overflow-hidden">
       {/* API Key Input */}
-      <ApiKeyInput />
+      <ApiKeyInput isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       {/* View Mode Toggle */}
-      <div className="fixed top-6 right-6 z-50 flex bg-zinc-900/90 backdrop-blur-md rounded-full p-1.5 border border-zinc-800 shadow-xl">
+      <div className="fixed top-6 right-6 z-50 flex bg-zinc-900/90 backdrop-blur-md rounded-full p-1.5 border border-zinc-800 shadow-xl items-center gap-1">
+        <button
+          onClick={() => setIsSettingsOpen(true)}
+          className="p-2.5 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-all"
+          title="Settings"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
+        
+        <div className="w-px h-4 bg-zinc-800 mx-1" />
+
         <button
           onClick={() => setViewMode('mosaic')}
           className={`px-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${
@@ -361,7 +319,7 @@ export default function Home() {
           </div>
 
           {/* Prompt Input */}
-          <PromptInput />
+          <PromptInput onGenerate={handleGenerate} />
 
           {/* Motion Studio Modal */}
           <AnimatePresence>

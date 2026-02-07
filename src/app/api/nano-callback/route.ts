@@ -19,7 +19,12 @@ const nanoTaskResults = new Map<string, { imageUrls: string[]; status: 'success'
 
 export async function POST(request: NextRequest) {
   try {
-    const callback: NanoCallback = await request.json()
+    let callback: NanoCallback;
+    try {
+      callback = await request.json()
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
     
     console.log('Received nano callback:', callback)
     

@@ -1,15 +1,57 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { useAppStore } from '@/lib/store'
-import { Download, Eye } from 'lucide-react'
+import { useAppStore, Image } from '@/lib/store'
+import { Download, Eye, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
+import { downloadFile } from '@/lib/utils'
 
 interface ImageGridProps {
   onImageClick: (image: any) => void
 }
 
 export default function ImageGrid({ onImageClick }: ImageGridProps) {
-  const { images, activeVideoTasks, generatedVideos } = useAppStore()
+  const { images, activeVideoTasks, generatedVideos, kieApiKey, updateImage } = useAppStore()
+  const [refreshingImages, setRefreshingImages] = useState<Set<string>>(new Set())
+
+  const handleImageError = async (image: Image) => {
+    if (!kieApiKey || !image.taskId || refreshingImages.has(image.id)) return
+    
+    console.log(`Image ${image.id} failed to load, attempting to refresh...`)
+    setRefreshingImages(prev => new Set(prev).add(image.id))
+    
+    try {
+      const isMidjourney = image.id.startsWith('mj-')
+      const endpoint = isMidjourney ? '/api/generate-batch/callback' : '/api/nano-callback'
+      
+      const res = await fetch(`${endpoint}?taskId=${image.taskId}`, {
+        headers: { 'Authorization': `Bearer ${kieApiKey}` }
+      })
+      const data = await res.json()
+      
+      if (data.status === 'success') {
+        const urls = isMidjourney ? data.resultUrls : data.imageUrls
+        if (urls && urls.length > 0) {
+          // Find the index of this image based on its ID suffix
+          const idParts = image.id.split('-')
+          const idx = parseInt(idParts[idParts.length - 1]) || 0
+          
+          if (idx < urls.length) {
+            updateImage(image.id, { url: urls[idx] })
+            console.log(`Image ${image.id} URL refreshed successfully`)
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to refresh image ${image.id}:`, error)
+    } finally {
+      setRefreshingImages(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(image.id)
+        return newSet
+      })
+    }
+  }
 
   const staggerContainer = {
     hidden: { opacity: 0 },
@@ -37,10 +79,6 @@ export default function ImageGrid({ onImageClick }: ImageGridProps) {
       }
     }
   }
-
-  const loadingSkeleton = (
-    <div className="w-full h-full bg-zinc-800 rounded-lg animate-pulse" />
-  )
 
   return (
     <div className="grid grid-cols-3 md:grid-cols-6 gap-1 md:gap-2 p-2 pb-24">
@@ -76,8 +114,9 @@ export default function ImageGrid({ onImageClick }: ImageGridProps) {
               <img
                 src={image.url}
                 loading="lazy"
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 ${refreshingImages.has(image.id) ? 'opacity-50' : ''}`}
                 alt={image.prompt || 'Generated image'}
+                onError={() => handleImageError(image)}
               />
               
               {/* Hover Overlay - Desktop Only */}
@@ -94,11 +133,7 @@ export default function ImageGrid({ onImageClick }: ImageGridProps) {
               <button
                 onClick={(e) => {
                   e.stopPropagation()
-                  // Download functionality
-                  const link = document.createElement('a')
-                  link.href = image.url
-                  link.download = `motion-mosaic-${image.id}.jpg`
-                  link.click()
+                  downloadFile(image.url, `motion-mosaic-${image.id}.jpg`)
                 }}
                 className="absolute bottom-2 right-2 p-2 bg-black/50 backdrop-blur-sm rounded-full opacity-0 group-hover:opacity-100 transition-opacity md:opacity-100 md:bg-zinc-800/80"
               >

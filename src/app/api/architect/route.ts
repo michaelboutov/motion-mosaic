@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { GoogleGenAI } from '@google/genai'
 
 interface ArchitectRequest {
   topic: string
   apiKey: string
+  provider?: 'kie' | 'google'
+  scriptLength?: number
 }
 
 const SYSTEM_PROMPT = `
@@ -32,21 +35,25 @@ You are the **Viral AI Video Architect**. Your goal is to engineer high-retentio
 
 ---
 
-# 2. VIDEO STRUCTURE (Total ~40s)
+# 2. VIDEO STRUCTURE
+*   **TOTAL DURATION:** Target [TARGET_DURATION] seconds.
+*   **SCENE COUNT:** You MUST generate EXACTLY [SCENE_COUNT] scenes.
+*   **SCENE DURATION:** Every scene is exactly 3 seconds long.
 
 *   **SCENE 1 (THE HOOK):**
-    *   **Duration:** 6 Seconds.
+    *   **Duration:** 3 Seconds.
     *   **Visual:** Close-up of Main Character.
     *   **Audio:** Character speaks directly to the camera (Lip Sync).
     *   **Overlay:** One catchy Caption/Title (Max 5 words).
 
-*   **SCENES 2-14 (THE MONTAGE):**
-    *   **Duration:** ~2.3 Seconds each.
+*   **SCENES 2 - (N-1) (THE MONTAGE):**
+    *   **Duration:** 3 Seconds each.
     *   **Visual:** Fast-paced evolution, different places, objects, metaphors (Mostly Midjourney).
     *   **Audio:** Background Narration + Music.
+    *   **Narration Rule:** The narration text must be long enough to cover the entire montage duration (approx 150 words per minute).
 
-*   **SCENE 15 (THE LOOP):**
-    *   **Duration:** 2.3 Seconds.
+*   **SCENE N (THE LOOP):**
+    *   **Duration:** 3 Seconds.
     *   **Visual:** Often brings back the Main Character (using Nano Banana) to close the story visually.
     *   **Audio:** Final narration line that connects to the start.
 
@@ -55,9 +62,9 @@ You are the **Viral AI Video Architect**. Your goal is to engineer high-retentio
 # 3. CRITICAL LOGIC: "THE INFINITE LOOP"
 
 The video must loop perfectly on TikTok.
-*   **The Rule:** The **LAST phrase** of Scene 15 must grammatically and logically lead into the **FIRST phrase** of Scene 1.
+*   **The Rule:** The **LAST phrase** of the final scene must grammatically and logically lead into the **FIRST phrase** of Scene 1.
 *   **Example:**
-    *   *End (Scene 15):* "...and that is the only reason why..."
+    *   *End (Final Scene):* "...and that is the only reason why..."
     *   *Start (Scene 1):* "...I never trust a robot."
 
 ---
@@ -84,7 +91,7 @@ You must generate the response in **PURE JSON** format with the following struct
       "tool": "Midjourney",
       "reference": "N/A",
       "prompt": "Full Midjourney prompt including the mandatory style string",
-      "grokMotion": "Lip Sync: Character speaking (6s)"
+      "grokMotion": "Lip Sync: Character speaking (3s)"
     },
     ...
   ]
@@ -93,7 +100,18 @@ You must generate the response in **PURE JSON** format with the following struct
 
 export async function POST(request: NextRequest) {
   try {
-    const { topic, apiKey } = await request.json()
+    let body;
+    try {
+      body = await request.json()
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    if (!body) {
+      return NextResponse.json({ error: 'Empty request body' }, { status: 400 })
+    }
+
+    const { topic, apiKey, provider = 'kie', scriptLength = 60 } = body
 
     if (!topic || !apiKey) {
       return NextResponse.json(
@@ -102,47 +120,180 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const response = await fetch('https://api.kie.ai/gemini-3-flash/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: 'system',
-            content: SYSTEM_PROMPT
-          },
+    // Calculate exact number of scenes: 3 seconds per scene
+    const sceneCount = Math.max(5, Math.ceil(scriptLength / 3));
+    const dynamicPrompt = SYSTEM_PROMPT
+      .replace('[TARGET_DURATION]', scriptLength.toString())
+      .replace('[SCENE_COUNT]', sceneCount.toString());
+
+    let content = '';
+
+    if (provider === 'google') {
+      const ai = new GoogleGenAI({
+        apiKey: apiKey,
+      });
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash', 
+        config: {
+            systemInstruction: {
+                parts: [{ text: dynamicPrompt }]
+            },
+            responseMimeType: 'application/json',
+        },
+        contents: [
           {
             role: 'user',
-            content: `Topic: ${topic}`
-          }
+            parts: [
+              {
+                text: `Topic: ${topic}. Target Video Length: ${scriptLength} seconds.`,
+              },
+            ],
+          },
         ],
-        stream: false,
-        temperature: 0.7
-      })
-    })
+      });
 
-    if (!response.ok) {
-      const errorData = await response.text()
-      console.error('Gemini API Error:', errorData)
-      throw new Error(`Gemini API error: ${response.status}`)
+      // Handle response
+      // Check if response has candidates
+      if (response.candidates && response.candidates.length > 0) {
+          const candidate = response.candidates[0];
+          if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+              content = candidate.content.parts[0].text || '';
+          }
+      }
+      
+      if (!content) {
+          throw new Error('No content generated from Google API');
+      }
+
+    } else {
+      // Kie.ai implementation - Model in URL as per documentation
+      console.log('Using Kie.ai with model gemini-3-flash')
+      const response = await fetch('https://api.kie.ai/gemini-3-flash/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: dynamicPrompt
+            },
+            {
+              role: 'user',
+              content: `Topic: ${topic}. Target Video Length: ${scriptLength} seconds.`
+            }
+          ],
+          stream: false,
+          temperature: 0.7
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.text()
+        console.error('Gemini API Error:', errorData)
+        throw new Error(`Gemini API error: ${response.status}`)
+      }
+
+      const result = await response.json()
+      console.log('--- KIE.AI DEBUG START ---')
+      console.log('Status:', response.status)
+      console.log('Full Response:', JSON.stringify(result, null, 2))
+      
+      // Check for explicit error object first
+      if (result.error) {
+        console.error('Kie.ai Error Object:', result.error)
+        const errorMsg = result.error.message || result.error.msg || JSON.stringify(result.error)
+        return NextResponse.json({ 
+          error: `Kie.ai API Error: ${errorMsg}`,
+          details: result.error
+        }, { status: 422 })
+      }
+
+      // Ultra-robust response parsing for Kie.ai and similar proxies
+      let content = ''
+      
+      const findContent = (obj: any): string | null => {
+        if (!obj) return null;
+        if (typeof obj === 'string') return obj;
+        
+        // OpenAI/Kie.ai Chat format
+        if (obj.choices?.[0]?.message?.content) return obj.choices[0].message.content;
+        if (obj.choices?.[0]?.text) return obj.choices[0].text;
+        
+        // Google Gemini format
+        if (obj.candidates?.[0]?.content?.parts?.[0]?.text) return obj.candidates[0].content.parts[0].text;
+        
+        // Kie.ai Specific or other proxies
+        if (obj.data?.choices?.[0]?.message?.content) return obj.data.choices[0].message.content;
+        if (obj.data?.content) return obj.data.content;
+        if (obj.result) return typeof obj.result === 'string' ? obj.result : findContent(obj.result);
+        if (obj.message?.content) return obj.message.content;
+        
+        // Some APIs return the content directly in a 'text' or 'output' field
+        if (obj.text) return typeof obj.text === 'string' ? obj.text : null;
+        if (obj.output) return typeof obj.output === 'string' ? obj.output : findContent(obj.output);
+        
+        // Some proxies wrap in data
+        if (obj.data && obj.data !== obj) return findContent(obj.data);
+        
+        // Anthropic format (just in case)
+        if (obj.content?.[0]?.text) return obj.content[0].text;
+        if (Array.isArray(obj.content)) {
+            for (const item of obj.content) {
+                if (item.text) return item.text;
+                if (typeof item === 'string') return item;
+            }
+        }
+        
+        return null;
+      };
+
+      content = findContent(result) || '';
+
+      console.log('Extracted Content Length:', content?.length || 0)
+      console.log('--- KIE.AI DEBUG END ---')
+
+      if (!content) {
+        console.error('Invalid Kie.ai response structure:', result)
+        return NextResponse.json({ 
+          error: 'The Kie.ai API returned a response that couldn\'t be parsed. This usually happens when the model name or API path is incorrect.',
+          details: result,
+          status: response.status,
+          keys: Object.keys(result)
+        }, { status: 502 })
+      }
     }
 
-    const result = await response.json()
-    const content = result.choices[0].message.content
-
     // Parse JSON content
-    // Remove markdown code blocks if present (despite instructions)
-    const jsonString = content.replace(/^```json\s*/, '').replace(/\s*```$/, '')
+    // Remove markdown code blocks and handle potential preamble/postamble text
+    let jsonString = content.trim();
+    
+    // Attempt to extract JSON from markdown blocks first
+    const jsonMatch = jsonString.match(/```json\s*([\s\S]*?)\s*```/) || jsonString.match(/```\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      jsonString = jsonMatch[1];
+    } else {
+      // Find the first '{' and last '}' to isolate JSON if it's buried in text
+      const firstBrace = jsonString.indexOf('{');
+      const lastBrace = jsonString.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        jsonString = jsonString.substring(firstBrace, lastBrace + 1);
+      }
+    }
     
     let parsedData
     try {
       parsedData = JSON.parse(jsonString)
     } catch (e) {
-      console.error('Failed to parse Gemini response:', jsonString)
-      throw new Error('Failed to parse Architect response')
+      console.error('Failed to parse LLM response as JSON:', jsonString)
+      // Fallback: If it's not JSON, return a descriptive error
+      return NextResponse.json({ 
+        error: 'The AI architect returned an invalid script format. Please try again.',
+        rawContent: content.substring(0, 500)
+      }, { status: 422 })
     }
 
     return NextResponse.json(parsedData)

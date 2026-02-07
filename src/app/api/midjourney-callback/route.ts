@@ -16,7 +16,12 @@ const taskResults = new Map<string, { resultUrls: string[]; status: 'success' | 
 
 export async function POST(request: NextRequest) {
   try {
-    const callback: MidjourneyCallback = await request.json()
+    let callback: MidjourneyCallback;
+    try {
+      callback = await request.json()
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
     
     console.log('Received Midjourney callback:', callback)
     

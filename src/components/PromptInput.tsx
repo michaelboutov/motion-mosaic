@@ -4,9 +4,16 @@ import { useState, useRef, useEffect } from 'react'
 import { useAppStore } from '@/lib/store'
 import { SlidersHorizontal, Sparkles } from 'lucide-react'
 
-export default function PromptInput() {
-  const { prompt, setPrompt, isGeneratingImages, apiKey } = useAppStore()
+interface PromptInputProps {
+  onGenerate: (prompt: string) => void
+}
+
+export default function PromptInput({ onGenerate }: PromptInputProps) {
+  const { prompt, setPrompt, isGeneratingImages, kieApiKey } = useAppStore()
   const [showSettings, setShowSettings] = useState(false)
+  const [aspectRatio, setAspectRatio] = useState('16:9')
+  const [speed, setSpeed] = useState('relaxed')
+  const [variety, setVariety] = useState(10)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -17,11 +24,8 @@ export default function PromptInput() {
   }, [prompt])
 
   const handleGenerate = async () => {
-    if (!prompt.trim() || isGeneratingImages || !apiKey) return
-    
-    // This will trigger the image generation
-    // We'll implement this logic in the main component
-    window.dispatchEvent(new CustomEvent('generate-images', { detail: { prompt } }))
+    if (!prompt.trim() || isGeneratingImages || !kieApiKey) return
+    onGenerate(prompt)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -55,7 +59,7 @@ export default function PromptInput() {
           
           <button
             onClick={handleGenerate}
-            disabled={!prompt.trim() || isGeneratingImages || !apiKey}
+            disabled={!prompt.trim() || isGeneratingImages || !kieApiKey}
             className="bg-white text-black font-bold px-6 py-3 rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 flex items-center gap-2"
           >
             {isGeneratingImages ? (
@@ -80,7 +84,11 @@ export default function PromptInput() {
           <div className="space-y-3">
             <div>
               <label className="text-zinc-400 text-sm">Aspect Ratio</label>
-              <select className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white">
+              <select
+                value={aspectRatio}
+                onChange={(e) => setAspectRatio(e.target.value)}
+                className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white"
+              >
                 <option value="16:9">16:9 (Widescreen)</option>
                 <option value="1:1">1:1 (Square)</option>
                 <option value="9:16">9:16 (Portrait)</option>
@@ -89,7 +97,11 @@ export default function PromptInput() {
             </div>
             <div>
               <label className="text-zinc-400 text-sm">Speed</label>
-              <select className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white">
+              <select
+                value={speed}
+                onChange={(e) => setSpeed(e.target.value)}
+                className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white"
+              >
                 <option value="relaxed">Relaxed</option>
                 <option value="fast">Fast</option>
                 <option value="turbo">Turbo</option>
@@ -102,7 +114,8 @@ export default function PromptInput() {
                 min="0" 
                 max="100" 
                 step="5"
-                defaultValue="10"
+                value={variety}
+                onChange={(e) => setVariety(parseInt(e.target.value))}
                 className="w-full mt-1"
               />
             </div>

@@ -38,7 +38,18 @@ interface MidjourneyResponse {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, apiKey, batchCount = 1, aspectRatio = '9:16' } = await request.json()
+    let body;
+    try {
+      body = await request.json()
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    if (!body) {
+      return NextResponse.json({ error: 'Empty request body' }, { status: 400 })
+    }
+
+    const { prompt, apiKey, batchCount = 1, aspectRatio = '9:16' } = body
 
     if (!prompt || !apiKey) {
       return NextResponse.json(

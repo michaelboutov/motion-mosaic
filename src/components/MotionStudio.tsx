@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore, Image } from '@/lib/store'
 import { X, Download, Share, Sparkles, Wand2 } from 'lucide-react'
+import { downloadFile } from '@/lib/utils'
+import { useToast } from '@/components/Toast'
 
 interface MotionStudioProps {
   isOpen: boolean
@@ -17,10 +19,11 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
     activeVideoTasks,
     addVideoTask,
     setGeneratedVideo,
-    apiKey,
+    kieApiKey,
     addNanoTask
   } = useAppStore()
   
+  const { toast } = useToast()
   const [activeTab, setActiveTab] = useState<'source' | 'output'>('source')
   const [activeTool, setActiveTool] = useState<'video' | 'nano'>('video')
   const [localIsGenerating, setLocalIsGenerating] = useState(false)
@@ -43,18 +46,16 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
 
   const [videoPrompt, setVideoPrompt] = useState('')
 
-  // Initialize prompt when selectedImage changes
-  if (selectedImage) {
-    if (!videoPrompt && selectedImage.prompt) {
+  // Initialize prompts when selectedImage changes
+  useEffect(() => {
+    if (selectedImage?.prompt) {
       setVideoPrompt(selectedImage.prompt)
-    }
-    if (!nanoPrompt && selectedImage.prompt) {
       setNanoPrompt(selectedImage.prompt)
     }
-  }
+  }, [selectedImage?.id])
 
   const handleGenerateVideo = async () => {
-    if (!selectedImage || !apiKey) return
+    if (!selectedImage || !kieApiKey) return
 
     setLocalIsGenerating(true)
     setActiveTab('output')
@@ -66,7 +67,7 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${kieApiKey}`
         },
         body: JSON.stringify({
           imageUrl: selectedImage.url,
@@ -95,8 +96,8 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
   }
 
   const handleUpscaleVideo = async () => {
-    if (!selectedImage || !apiKey || !videoData?.taskId) {
-      alert("Cannot upscale: Missing video task ID. Please regenerate the video.")
+    if (!selectedImage || !kieApiKey || !videoData?.taskId) {
+      toast({ title: 'Cannot upscale', description: 'Missing video task ID. Please regenerate the video.', variant: 'warning' })
       return
     }
 
@@ -107,7 +108,7 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${kieApiKey}`
         },
         body: JSON.stringify({
           taskId: videoData.taskId
@@ -123,18 +124,18 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
         addVideoTask(result.taskId, selectedImage.id, 'grok-upscale')
       } else {
         console.error('Upscale failed:', result.error)
-        alert(`Upscale failed: ${result.error}`)
+        toast({ title: 'Upscale failed', description: result.error, variant: 'error' })
       }
     } catch (error) {
       console.error('Error starting upscale:', error)
-      alert('Error starting upscale')
+      toast({ title: 'Error starting upscale', variant: 'error' })
     } finally {
       setLocalIsGenerating(false)
     }
   }
 
   const handleGenerateNano = async () => {
-    if (!selectedImage || !apiKey) return
+    if (!selectedImage || !kieApiKey) return
 
     setLocalIsGenerating(true)
     setActiveTab('output')
@@ -145,7 +146,7 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          'Authorization': `Bearer ${kieApiKey}`
         },
         body: JSON.stringify({
           imageUrl: selectedImage.url,
@@ -165,20 +166,17 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
         onClose() 
       } else {
         console.error('Nano generation failed:', result.error)
+        toast({ title: 'Generation failed', description: result.error || 'Unknown error', variant: 'error' })
       }
     } catch (error) {
       console.error('Error generating nano edit:', error)
+      toast({ title: 'Error generating nano edit', description: 'Please check console for details.', variant: 'error' })
     } finally {
       setLocalIsGenerating(false)
     }
   }
 
-  const handleDownload = (url: string, filename: string) => {
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    link.click()
-  }
+  const handleDownload = downloadFile
 
   if (!isOpen || !selectedImage) return null
 
@@ -265,12 +263,29 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
               </span>
             </div>
             
-            <motion.img
-              layoutId={`image-${selectedImage.id}`}
-              src={selectedImage.url}
-              className="max-h-[80vh] max-w-[90%] object-contain shadow-2xl rounded-lg"
-              alt={selectedImage.prompt || 'Source image'}
-            />
+            {selectedImage.url ? (
+              <motion.img
+                layoutId={`image-${selectedImage.id}`}
+                src={selectedImage.url}
+                className="max-h-[80vh] max-w-[90%] object-contain shadow-2xl rounded-lg"
+                alt={selectedImage.prompt || 'Source image'}
+              />
+            ) : (
+              <div className="max-h-[80vh] max-w-[90%] flex flex-col items-center justify-center text-zinc-500">
+                <span className="text-sm mb-2">Image URL expired or missing</span>
+                {selectedImage.taskId && (
+                  <button
+                    onClick={() => {
+                      // Refresh the image URL
+                      window.location.reload()
+                    }}
+                    className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs"
+                  >
+                    Refresh Page
+                  </button>
+                )}
+              </div>
+            )}
             
             <button
               onClick={() => handleDownload(selectedImage.url, `source-${selectedImage.id}.jpg`)}
@@ -386,7 +401,7 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
 
                   <button
                     onClick={handleGenerateVideo}
-                    disabled={!apiKey}
+                    disabled={!kieApiKey}
                     className="group relative inline-flex h-12 overflow-hidden rounded-full p-[1px] focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 focus:ring-offset-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <span className="absolute inset-[-1000%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2E8F0_0%,#f59e0b_50%,#E2E8F0_100%)]" />
@@ -476,7 +491,7 @@ export default function MotionStudio({ isOpen, onClose, selectedImage }: MotionS
 
                   <button
                     onClick={handleGenerateNano}
-                    disabled={!apiKey}
+                    disabled={!kieApiKey}
                     className="group relative inline-flex h-12 overflow-hidden rounded-full p-[1px] focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 focus:ring-offset-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <span className="absolute inset-[-1000%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2E8F0_0%,#8b5cf6_50%,#E2E8F0_100%)]" />

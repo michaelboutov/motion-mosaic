@@ -18,7 +18,12 @@ const taskResults = new Map<string, { resultUrls: string[]; status: 'success' | 
 
 export async function POST(request: NextRequest) {
   try {
-    const callback: MidjourneyCallback = await request.json()
+    let callback: MidjourneyCallback;
+    try {
+      callback = await request.json()
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
     
     console.log('Received Batch callback:', JSON.stringify(callback, null, 2))
     
@@ -100,25 +105,30 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(cachedResult)
   }
 
-  // Upstream polling (fallback)
+  // Upstream polling (fallback when in-memory cache is empty, e.g. after server restart)
   if (apiKey) {
     try {
       const apiUrl = `https://api.kie.ai/api/v1/mj/record-info?taskId=${taskId}`
+      console.log(`[Batch Callback GET] Polling upstream for task ${taskId}`)
       const response = await fetch(apiUrl, {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       })
       
       const data = await response.json()
+      console.log(`[Batch Callback GET] Upstream response for ${taskId}:`, JSON.stringify(data).slice(0, 500))
       
       if (data.code === 200 && data.data) {
         const { successFlag, resultInfoJson, errorMessage } = data.data
+        console.log(`[Batch Callback GET] successFlag=${successFlag}, hasResultInfoJson=${!!resultInfoJson}, type=${typeof resultInfoJson}`)
         
         if (successFlag === 1) {
           let resultUrls: string[] = []
           let infoJson = resultInfoJson
           
           if (typeof infoJson === 'string') {
-            try { infoJson = JSON.parse(infoJson) } catch (e) {}
+            try { infoJson = JSON.parse(infoJson) } catch (e) {
+              console.error(`[Batch Callback GET] Failed to parse resultInfoJson string`)
+            }
           }
           
           if (infoJson?.resultUrls) {
@@ -126,6 +136,8 @@ export async function GET(request: NextRequest) {
               typeof item === 'string' ? item : item.resultUrl
             ).filter(Boolean)
           }
+
+          console.log(`[Batch Callback GET] Extracted ${resultUrls.length} URLs for task ${taskId}`)
 
           if (resultUrls.length > 0) {
             const result = { resultUrls, status: 'success' as const }
@@ -137,10 +149,14 @@ export async function GET(request: NextRequest) {
           taskResults.set(taskId, result)
           return NextResponse.json(result)
         }
+      } else {
+        console.warn(`[Batch Callback GET] Unexpected upstream response code: ${data.code}`)
       }
     } catch (error) {
-      console.error('Error polling upstream:', error)
+      console.error('[Batch Callback GET] Error polling upstream:', error)
     }
+  } else {
+    console.warn(`[Batch Callback GET] No API key provided for task ${taskId}`)
   }
   
   return NextResponse.json({ status: 'pending' })

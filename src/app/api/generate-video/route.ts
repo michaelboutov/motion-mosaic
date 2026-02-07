@@ -27,7 +27,22 @@ const videoTaskResults = new Map<string, { videoUrl: string; status: 'success' |
 
 export async function POST(request: NextRequest) {
   try {
-    const { imageUrl, prompt, model, duration, mode }: VideoRequest = await request.json()
+    console.log('Generate Video request received')
+
+    let body: VideoRequest;
+    try {
+      body = await request.json()
+      console.log('Video Request body:', JSON.stringify(body, null, 2))
+    } catch (e) {
+      console.error('JSON parse error:', e)
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
+
+    if (!body) {
+       return NextResponse.json({ error: 'Empty request body' }, { status: 400 })
+    }
+
+    const { imageUrl, prompt, model, duration, mode } = body
     const apiKey = request.headers.get('Authorization')?.replace('Bearer ', '')
 
     if (!imageUrl || !prompt || !apiKey) {
@@ -35,6 +50,13 @@ export async function POST(request: NextRequest) {
         { error: 'Image URL, prompt, and API key are required' },
         { status: 400 }
       )
+    }
+
+    // Validate URL
+    try {
+      new URL(imageUrl);
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid Image URL format' }, { status: 400 })
     }
 
     const selectedModel = model || 'bytedance/seedance-1.5-pro'
@@ -51,7 +73,7 @@ export async function POST(request: NextRequest) {
           image_urls: [imageUrl],
           prompt: prompt,
           mode: mode || 'normal',
-          duration: duration || '6',
+          duration: duration || '3',
           // Grok specific defaults if needed
         }
       }
@@ -82,15 +104,38 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify(taskRequest)
     })
+    
+    console.log('Upstream response status:', response.status)
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      const errorText = await response.text();
+      console.error('Upstream API error:', response.status, errorText);
+       return NextResponse.json(
+        { error: `Upstream error (${response.status}): ${errorText || response.statusText}` },
+        { status: 502 }
+      );
     }
 
-    const result: VideoTaskResponse = await response.json()
+    const result = await response.json()
+    console.log('Upstream result:', JSON.stringify(result, null, 2))
+    console.log('Response code:', result.code, 'Message:', result.message)
+    console.log('Response data:', result.data)
 
     if (result.code !== 200) {
-      throw new Error(result.message)
+      console.error('Upstream API logical error:', result);
+      const errorMsg = result.message || JSON.stringify(result);
+      return NextResponse.json(
+        { error: errorMsg, fullResponse: result },
+        { status: 422 }
+      );
+    }
+
+    if (!result.data?.taskId) {
+      console.error('Missing taskId in response:', result);
+      return NextResponse.json(
+        { error: 'Invalid response: missing taskId', fullResponse: result },
+        { status: 422 }
+      );
     }
 
     return NextResponse.json({
