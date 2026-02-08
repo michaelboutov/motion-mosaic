@@ -36,6 +36,15 @@ export function useArchitectActions() {
   const hasRefreshedRef = useRef(false)
   // Use a ref instead of (window as any).__refreshingTasks
   const refreshingTasksRef = useRef(new Set<string>())
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null)
+
+  // Track unsaved changes by comparing current architect state to last saved snapshot
+  const currentSnapshot = architect.strategy ? JSON.stringify({
+    strategy: architect.strategy,
+    script: architect.script,
+    scenes: architect.scenes.map(s => ({ id: s.id, prompt: s.prompt, visual: s.visual, images: s.images.length, selectedImageId: s.selectedImageId })),
+  }) : null
+  const hasUnsavedChanges = !!(currentSnapshot && currentSnapshot !== lastSavedSnapshot)
 
   // ── Auto-refresh on page load ──────────────────────────────────────
   const refreshAllImageUrls = async () => {
@@ -410,7 +419,10 @@ export function useArchitectActions() {
   }
 
   // ── Scene video animation ──────────────────────────────────────────
-  const handleAnimateScene = async (sceneId: number) => {
+  const handleAnimateScene = async (
+    sceneId: number,
+    options?: { model?: 'seedream' | 'grok'; prompt?: string; duration?: string; mode?: string }
+  ) => {
     if (!kieApiKey) return
 
     const scene = architect.scenes.find((s) => s.id === sceneId)
@@ -427,6 +439,9 @@ export function useArchitectActions() {
 
     updateScene(sceneId, { video: { url: '', status: 'generating' } })
 
+    const selectedModel = options?.model || 'seedream'
+    const videoPrompt = options?.prompt || scene.grokMotion || 'Animate this image'
+
     try {
       const response = await fetch('/api/generate-video', {
         method: 'POST',
@@ -436,10 +451,12 @@ export function useArchitectActions() {
         },
         body: JSON.stringify({
           imageUrl: selectedImg.url,
-          prompt: scene.grokMotion,
-          model: 'grok-imagine/image-to-video',
-          duration: '3',
-          mode: 'normal',
+          prompt: videoPrompt,
+          model: selectedModel === 'grok' ? 'grok-imagine/image-to-video' : 'bytedance/seedance-1.5-pro',
+          ...(selectedModel === 'grok' && {
+            duration: options?.duration || '6',
+            mode: options?.mode || 'normal',
+          }),
         }),
       })
 
@@ -568,8 +585,7 @@ export function useArchitectActions() {
       return
     }
 
-    if (!confirm(`Generate images for all ${pendingScenes.length} pending scenes?`))
-      return
+    toast({ title: `Generating ${pendingScenes.length} scene${pendingScenes.length > 1 ? 's' : ''}…`, description: 'This may take a few minutes. You can continue working.', variant: 'default' })
 
     for (const scene of pendingScenes) {
       handleGenerateScene(scene.id, scene.tool, scene.prompt)
@@ -649,6 +665,7 @@ export function useArchitectActions() {
     )
     if (name) {
       saveProject({ name, architect })
+      setLastSavedSnapshot(currentSnapshot)
       toast({ title: 'Project saved', variant: 'success' })
     }
   }
@@ -662,6 +679,7 @@ export function useArchitectActions() {
     isDesigning,
     isRefreshing,
     refreshResult,
+    hasUnsavedChanges,
     handleDesign,
     handleGenerateScene,
     handleAnimateScene,

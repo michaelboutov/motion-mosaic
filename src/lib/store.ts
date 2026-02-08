@@ -5,6 +5,7 @@ export interface Image {
   url: string
   status: 'loading' | 'done' | 'error'
   prompt?: string
+  videoPrompt?: string
   taskId?: string
 }
 

@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Empty request body' }, { status: 400 })
     }
 
-    const { prompt, apiKey } = body
+    const { prompt, apiKey, aspectRatio, speed, variety } = body
 
     if (!prompt || !apiKey) {
       return NextResponse.json(
@@ -56,10 +56,10 @@ export async function POST(request: NextRequest) {
     const requests: MidjourneyRequest[] = Array.from({ length: 15 }, (_, i) => ({
       taskType: 'mj_txt2img',
       prompt: `${prompt} `,
-      speed: 'relaxed',
-      aspectRatio: '9:16',
+      speed: speed || 'relaxed',
+      aspectRatio: aspectRatio || '9:16',
       version: '7',
-      variety: 5, // Increase variety for each batch
+      variety: variety ?? 5,
       stylization: 100,
       weirdness: 0,
       callBackUrl: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/midjourney-callback`

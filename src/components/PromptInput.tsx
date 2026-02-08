@@ -4,8 +4,14 @@ import { useState, useRef, useEffect } from 'react'
 import { useAppStore } from '@/lib/store'
 import { SlidersHorizontal, Sparkles } from 'lucide-react'
 
+export interface GenerationSettings {
+  aspectRatio: string
+  speed: string
+  variety: number
+}
+
 interface PromptInputProps {
-  onGenerate: (prompt: string) => void
+  onGenerate: (prompt: string, settings: GenerationSettings) => void
 }
 
 export default function PromptInput({ onGenerate }: PromptInputProps) {
@@ -25,7 +31,7 @@ export default function PromptInput({ onGenerate }: PromptInputProps) {
 
   const handleGenerate = async () => {
     if (!prompt.trim() || isGeneratingImages || !kieApiKey) return
-    onGenerate(prompt)
+    onGenerate(prompt, { aspectRatio, speed, variety })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -39,15 +45,23 @@ export default function PromptInput({ onGenerate }: PromptInputProps) {
     <>
       <div className="fixed bottom-0 left-0 w-full p-4 bg-zinc-950/80 backdrop-blur-xl border-t border-zinc-800 z-40">
         <div className="max-w-3xl mx-auto flex gap-3">
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isGeneratingImages}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none resize-none h-14 min-h-[56px] max-h-32 disabled:opacity-50"
-            placeholder="Describe your vision (e.g., 'Cyberpunk street food vendor in rain')..."
-          />
+          <div className="relative flex-1">
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isGeneratingImages}
+              maxLength={4000}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-3 pr-16 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none resize-none h-14 min-h-[56px] max-h-32 disabled:opacity-50"
+              placeholder="Describe your vision (e.g., 'Cyberpunk street food vendor in rain')..."
+            />
+            <span className={`absolute right-3 bottom-1.5 text-[10px] font-mono tabular-nums transition-colors ${
+              prompt.length > 3800 ? 'text-red-400' : prompt.length > 3000 ? 'text-amber-400' : 'text-zinc-600'
+            }`}>
+              {prompt.length}/4000
+            </span>
+          </div>
           
           <button
             onClick={() => setShowSettings(!showSettings)}
@@ -77,9 +91,11 @@ export default function PromptInput({ onGenerate }: PromptInputProps) {
         </div>
       </div>
 
-      {/* Settings Panel */}
+      {/* Settings Panel — anchored above the bottom bar */}
       {showSettings && (
-        <div className="fixed bottom-24 left-4 right-4 max-w-sm mx-auto bg-zinc-900 border border-zinc-800 rounded-2xl p-4 z-30 shadow-[0_0_50px_rgba(139,92,246,0.1)]">
+        <>
+        <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)} />
+        <div className="fixed bottom-[calc(4rem+1.5rem+1px)] left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-sm bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 rounded-2xl p-4 z-50 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
           <h3 className="text-white font-medium mb-3">Generation Settings</h3>
           <div className="space-y-3">
             <div>
@@ -108,7 +124,10 @@ export default function PromptInput({ onGenerate }: PromptInputProps) {
               </select>
             </div>
             <div>
-              <label className="text-zinc-400 text-sm">Variety</label>
+              <div className="flex items-center justify-between">
+                <label className="text-zinc-400 text-sm">Variety</label>
+                <span className="text-xs text-amber-400 font-mono">{variety}</span>
+              </div>
               <input 
                 type="range" 
                 min="0" 
@@ -116,11 +135,12 @@ export default function PromptInput({ onGenerate }: PromptInputProps) {
                 step="5"
                 value={variety}
                 onChange={(e) => setVariety(parseInt(e.target.value))}
-                className="w-full mt-1"
+                className="w-full mt-1 accent-amber-500"
               />
             </div>
           </div>
         </div>
+        </>
       )}
     </>
   )

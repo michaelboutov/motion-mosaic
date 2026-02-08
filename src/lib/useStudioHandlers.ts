@@ -24,10 +24,16 @@ export function useStudioHandlers() {
     setSelectedImageId(null)
   }
 
+  const handleNavigate = (image: Image) => {
+    setSelectedImage(image)
+    setSelectedImageId(image.id)
+  }
+
   return {
     selectedImage,
     isStudioOpen,
     handleImageClick,
     handleCloseStudio,
+    handleNavigate,
   }
 }

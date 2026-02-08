@@ -1,8 +1,10 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
+import { useState } from 'react'
 import { X, Calendar, ArrowRight, Trash2, FolderOpen, Film } from 'lucide-react'
 import { useAppStore, SavedProject } from '@/lib/store'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface ProjectLibraryProps {
   isOpen: boolean
@@ -25,6 +27,7 @@ const formatDate = (timestamp: number) => {
 
 export default function ProjectLibrary({ isOpen, onClose, onLoad }: ProjectLibraryProps) {
   const { savedProjects, deleteProject } = useAppStore()
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
   return (
     <AnimatePresence>
@@ -94,9 +97,7 @@ export default function ProjectLibrary({ isOpen, onClose, onLoad }: ProjectLibra
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            if (confirm('Are you sure you want to delete this project?')) {
-                              deleteProject(project.id)
-                            }
+                            setDeleteTarget(project.id)
                           }}
                           className="p-2 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                         >
@@ -148,6 +149,19 @@ export default function ProjectLibrary({ isOpen, onClose, onLoad }: ProjectLibra
               )}
             </div>
           </motion.div>
+
+          <ConfirmDialog
+            open={!!deleteTarget}
+            onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
+            title="Delete Project?"
+            description="This project will be permanently removed from your library. This action cannot be undone."
+            confirmLabel="Delete"
+            variant="danger"
+            onConfirm={() => {
+              if (deleteTarget) deleteProject(deleteTarget)
+              setDeleteTarget(null)
+            }}
+          />
         </motion.div>
       )}
     </AnimatePresence>

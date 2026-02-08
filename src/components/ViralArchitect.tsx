@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppStore, Image, SavedProject } from '@/lib/store'
 import { AnimatePresence } from 'framer-motion'
-import { Sparkles, RefreshCw, Loader2, Clapperboard, Save, FolderOpen, Settings, Play, Download, LayoutList, Film } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, Clapperboard, Save, FolderOpen, Settings, Play, Download, LayoutList, Film, Info, History } from 'lucide-react'
 import { useStudioHandlers } from '@/lib/useStudioHandlers'
 import { useArchitectActions } from '@/lib/useArchitectActions'
 import MotionStudio from '@/components/MotionStudio'
@@ -65,13 +65,14 @@ export default function ViralArchitect() {
   } = useAppStore()
 
   // Shared studio open/close logic
-  const { selectedImage, isStudioOpen, handleImageClick, handleCloseStudio } = useStudioHandlers()
+  const { selectedImage, isStudioOpen, handleImageClick, handleCloseStudio, handleNavigate } = useStudioHandlers()
 
   // All architect business logic (design, generate, animate, voiceover, refresh, save/load)
   const {
     isDesigning,
     isRefreshing,
     refreshResult,
+    hasUnsavedChanges,
     handleDesign,
     handleGenerateScene,
     handleAnimateScene,
@@ -94,7 +95,42 @@ export default function ViralArchitect() {
   const [importUrl, setImportUrl] = useState('')
   const [draftRecovered, setDraftRecovered] = useState(false)
   const [showNewProjectConfirm, setShowNewProjectConfirm] = useState(false)
+  const [showGenerateAllConfirm, setShowGenerateAllConfirm] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'timeline'>('list')
+  const [topicHistory, setTopicHistory] = useState<string[]>([])
+  const [showTopicHistory, setShowTopicHistory] = useState(false)
+  const [historyFilter, setHistoryFilter] = useState('')
+  const historyRef = useRef<HTMLDivElement>(null)
+
+  // Load topic history from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('motion-mosaic-topic-history')
+    if (saved) {
+      try { setTopicHistory(JSON.parse(saved)) } catch {}
+    }
+  }, [])
+
+  // Close history dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
+        setShowTopicHistory(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const addToTopicHistory = (t: string) => {
+    const trimmed = t.trim()
+    if (!trimmed) return
+    setTopicHistory(prev => {
+      const filtered = prev.filter(h => h !== trimmed)
+      const updated = [trimmed, ...filtered].slice(0, 10)
+      localStorage.setItem('motion-mosaic-topic-history', JSON.stringify(updated))
+      return updated
+    })
+  }
 
   // DnD sensors
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
@@ -134,12 +170,60 @@ export default function ViralArchitect() {
     setShowNewProjectConfirm(false)
   }
 
+  // Auto-open settings on first visit if no API key
+  useEffect(() => {
+    const hasKey = provider === 'google' ? googleApiKey : kieApiKey
+    if (!hasKey && !architect.strategy) {
+      setIsSettingsOpen(true)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (topic && !architect.strategy) {
       setDraftRecovered(true)
       toast({ title: 'Draft recovered', description: `Your previous topic "${topic}" has been restored.`, variant: 'default' })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+
+      // Cmd+S → Save Flow
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        handleSave()
+        return
+      }
+
+      // Cmd+Enter → Design
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        if (!architect.strategy) handleDesign()
+        return
+      }
+
+      // Escape → Close modals
+      if (e.key === 'Escape') {
+        if (isStudioOpen) { handleCloseStudio(); return }
+        if (isLibraryOpen) { setIsLibraryOpen(false); return }
+        if (isSettingsOpen) { setIsSettingsOpen(false); return }
+      }
+
+      // 1-9 → Jump to scene (only when not in input)
+      if (!isInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const num = parseInt(e.key)
+        if (num >= 1 && num <= 9 && num <= architect.scenes.length) {
+          setExpandedSceneId(expandedSceneId === num ? null : num)
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [architect.strategy, architect.scenes.length, expandedSceneId, isStudioOpen, isLibraryOpen, isSettingsOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLoad = (project: SavedProject) => {
     loadProject(project.id)
@@ -257,8 +341,14 @@ export default function ViralArchitect() {
                </button>
                <button
                  onClick={handleSave}
-                 className="px-4 py-2 bg-amber-500 text-black rounded-lg text-sm font-bold hover:bg-amber-400 transition-colors flex items-center gap-2"
+                 className="relative px-4 py-2 bg-amber-500 text-black rounded-lg text-sm font-bold hover:bg-amber-400 transition-colors flex items-center gap-2"
                >
+                 {hasUnsavedChanges && (
+                   <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                     <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                   </span>
+                 )}
                  <Save className="w-4 h-4" />
                  Save Flow
                </button>
@@ -273,12 +363,41 @@ export default function ViralArchitect() {
 
           {/* Production Board */}
           <div className="relative bg-zinc-900/50 backdrop-blur-xl border border-zinc-800/50 rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-6 border-b border-zinc-800/50 flex justify-between items-center backdrop-blur-sm">
-              <div className="flex items-center gap-4">
+            <div className="p-4 md:p-6 border-b border-zinc-800/50 backdrop-blur-sm space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className="text-lg font-bold text-white">Production Board</h3>
+                <div className="flex items-center gap-2">
+                  <div className="flex bg-zinc-800/50 rounded-lg p-0.5 border border-zinc-700/30">
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-white'}`}
+                      title="List View"
+                    >
+                      <LayoutList className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setViewMode('timeline')}
+                      className={`p-1.5 rounded-md transition-colors ${viewMode === 'timeline' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-white'}`}
+                      title="Timeline View"
+                    >
+                      <Film className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="relative group">
+                    <button className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors" title="Legend">
+                      <Info className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="absolute right-0 top-full mt-1 hidden group-hover:flex flex-col gap-1 bg-zinc-800 border border-zinc-700 rounded-lg p-2.5 shadow-xl z-20 whitespace-nowrap">
+                      <span className="flex items-center gap-1.5 text-xs text-zinc-400"><span className="w-2 h-2 rounded-full bg-blue-500"></span> Midjourney (12 imgs)</span>
+                      <span className="flex items-center gap-1.5 text-xs text-zinc-400"><span className="w-2 h-2 rounded-full bg-yellow-500"></span> Nano Banana (1 img)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={handleGenerateAllScenes}
-                  className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/10 transition-all flex items-center gap-2"
+                  onClick={() => setShowGenerateAllConfirm(true)}
+                  className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-[10px] font-bold uppercase tracking-widest border border-white/10 transition-all flex items-center gap-2"
                 >
                   <Play className="w-2.5 h-2.5" />
                   Generate All
@@ -286,14 +405,14 @@ export default function ViralArchitect() {
                 <button
                   onClick={refreshAllImageUrls}
                   disabled={isRefreshing}
-                  className="px-3 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-full text-[10px] font-bold uppercase tracking-widest border border-blue-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                  className="px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-full text-[10px] font-bold uppercase tracking-widest border border-blue-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
                 >
                   <RefreshCw className={`w-2.5 h-2.5 ${isRefreshing ? 'animate-spin' : ''}`} />
                   {isRefreshing ? 'Refreshing...' : 'Refresh Images'}
                 </button>
                 <button
                   onClick={handleDownloadAll}
-                  className="px-3 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-bold uppercase tracking-widest border border-emerald-500/20 transition-all flex items-center gap-2"
+                  className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-bold uppercase tracking-widest border border-emerald-500/20 transition-all flex items-center gap-2"
                 >
                   <Download className="w-2.5 h-2.5" />
                   Download All
@@ -302,29 +421,15 @@ export default function ViralArchitect() {
                   <span className="text-[10px] text-zinc-400 animate-in fade-in">{refreshResult}</span>
                 )}
               </div>
-              <div className="flex items-center gap-3">
-                <div className="flex bg-zinc-800/50 rounded-lg p-0.5 border border-zinc-700/30">
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-white'}`}
-                    title="List View"
-                  >
-                    <LayoutList className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setViewMode('timeline')}
-                    className={`p-1.5 rounded-md transition-colors ${viewMode === 'timeline' ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-white'}`}
-                    title="Timeline View"
-                  >
-                    <Film className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="flex gap-2 text-xs text-zinc-500">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span> Midjourney (12 imgs)</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500"></span> Nano Banana (1 img)</span>
-                </div>
-              </div>
             </div>
+
+            {/* Onboarding hint when all scenes are pending */}
+            {architect.scenes.length > 0 && architect.scenes.every(s => s.status === 'pending') && (
+              <div className="flex items-center justify-center gap-2 px-6 py-4 text-sm text-zinc-500 border-b border-zinc-800/30">
+                <Play className="w-3.5 h-3.5 text-zinc-600" />
+                <span>Click <strong className="text-zinc-400">Generate</strong> on a scene or use <strong className="text-zinc-400">Generate All</strong> to start.</span>
+              </div>
+            )}
 
             {/* Timeline / Storyboard View (#12) */}
             {viewMode === 'timeline' && (
@@ -408,16 +513,75 @@ export default function ViralArchitect() {
             )}
 
             <div className="flex gap-3">
-              <input
-                type="text"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleDesign()}
-                placeholder="Enter a video concept (e.g., 'The Reality Glitch', 'Cyberpunk Detective')..."
-                className="flex-1 bg-zinc-900/50 border border-zinc-700/50 rounded-2xl px-5 py-4 text-white focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 focus:outline-none transition-all placeholder:text-zinc-600"
-              />
+              <div className="flex-1 relative" ref={historyRef}>
+                <input
+                  type="text"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleDesign()}
+                  placeholder="Enter a video concept (e.g., 'The Reality Glitch', 'Cyberpunk Detective')..."
+                  className="w-full bg-zinc-900/50 border border-zinc-700/50 rounded-2xl px-5 py-4 pr-12 text-white focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 focus:outline-none transition-all placeholder:text-zinc-600"
+                />
+                {topicHistory.length > 0 && (
+                  <button
+                    onClick={() => setShowTopicHistory(!showTopicHistory)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-zinc-500 hover:text-amber-400 transition-colors"
+                    title="Recent topics"
+                  >
+                    <History className="w-4 h-4" />
+                  </button>
+                )}
+                {showTopicHistory && topicHistory.length > 0 && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 bg-zinc-900 border border-zinc-700/50 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="px-3 py-2 border-b border-zinc-800 flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Recent Topics</span>
+                      <button
+                        onClick={() => {
+                          setTopicHistory([])
+                          localStorage.removeItem('motion-mosaic-topic-history')
+                          setShowTopicHistory(false)
+                          setHistoryFilter('')
+                        }}
+                        className="text-[10px] text-zinc-600 hover:text-red-400 transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <div className="px-3 py-1.5 border-b border-zinc-800/50">
+                      <input
+                        type="text"
+                        value={historyFilter}
+                        onChange={(e) => setHistoryFilter(e.target.value)}
+                        placeholder="Filter topics..."
+                        className="w-full bg-zinc-800/50 border border-zinc-700/30 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-amber-500/40"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {topicHistory
+                        .filter(h => !historyFilter || h.toLowerCase().includes(historyFilter.toLowerCase()))
+                        .map((h, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            setTopic(h)
+                            setShowTopicHistory(false)
+                            setHistoryFilter('')
+                          }}
+                          className="w-full text-left px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors truncate"
+                        >
+                          {h}
+                        </button>
+                      ))}
+                      {topicHistory.filter(h => !historyFilter || h.toLowerCase().includes(historyFilter.toLowerCase())).length === 0 && (
+                        <div className="px-4 py-3 text-xs text-zinc-600 text-center">No matches</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
               <button
-                onClick={handleDesign}
+                onClick={() => { addToTopicHistory(topic); handleDesign() }}
                 disabled={!topic || isDesigning || !(provider === 'google' ? googleApiKey : kieApiKey)}
                 className="bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold px-8 py-4 rounded-2xl flex items-center gap-2 transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] active:scale-95"
               >
@@ -428,7 +592,13 @@ export default function ViralArchitect() {
                 )}
                 {isDesigning ? 'Designing...' : 'Design'}
               </button>
+
             </div>
+            {!(provider === 'google' ? googleApiKey : kieApiKey) && (
+              <p className="text-xs text-zinc-500 text-center mt-2">
+                Add your API key in <button onClick={() => setIsSettingsOpen(true)} className="text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors">Settings (⚙️)</button> to get started
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -440,6 +610,7 @@ export default function ViralArchitect() {
             isOpen={isStudioOpen}
             onClose={handleCloseStudio}
             selectedImage={selectedImage}
+            onNavigate={handleNavigate}
           />
         )}
       </AnimatePresence>
@@ -470,6 +641,17 @@ export default function ViralArchitect() {
         confirmLabel="New Project"
         variant="danger"
         onConfirm={handleConfirmNewProject}
+      />
+
+      {/* Confirm Generate All Dialog */}
+      <ConfirmDialog
+        open={showGenerateAllConfirm}
+        onOpenChange={setShowGenerateAllConfirm}
+        title="Generate All Scenes?"
+        description={`This will generate images for all ${architect.scenes.filter(s => s.status === 'pending').length} pending scenes. This uses API credits.`}
+        confirmLabel="Generate All"
+        variant="warning"
+        onConfirm={() => { handleGenerateAllScenes(); setShowGenerateAllConfirm(false) }}
       />
     </div>
   )

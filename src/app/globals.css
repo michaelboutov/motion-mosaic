@@ -58,6 +58,17 @@ body {
   background: #3f3f46;
 }
 
+/* Global focus-visible rings for accessibility */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #18181b, 0 0 0 4px #f59e0b;
+}
+
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;

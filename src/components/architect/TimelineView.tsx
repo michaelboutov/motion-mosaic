@@ -89,7 +89,9 @@ export default function TimelineView({ scenes, onSceneClick, activeSceneId }: Ti
               <div className="px-2 py-1.5 bg-zinc-900/90 backdrop-blur-sm">
                 <div className="text-[10px] font-bold text-zinc-400 mb-0.5">Scene {scene.id}</div>
                 <div className="text-[9px] text-zinc-600 truncate">{scene.visual}</div>
-                <div className="text-[8px] text-zinc-700 font-mono mt-0.5">3s</div>
+                {scene.video?.status === 'done' && (
+                  <div className="text-[8px] text-emerald-600 font-mono mt-0.5">Video</div>
+                )}
               </div>
             </motion.button>
           )

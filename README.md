@@ -37,6 +37,17 @@ MotionMosaic is a full-stack creative studio that turns text prompts into produc
 - **One-Click Video Pipeline** — Generate video from any scene image, then upscale — all inline.
 - **Genre Templates** — Quick-start with Horror, Sci-Fi, Documentary, Thriller, Fantasy, Drama, Comedy, and Cyberpunk presets.
 
+### UX Enhancements
+- **Smart Empty State** — Animated transition from landing screen to loading skeleton when generation starts, so you always know something is happening.
+- **Prompt Character Counter** — Live character count (4000 limit) with amber/red color warnings on the Mosaic prompt input.
+- **Backdrop Dismiss** — Click outside the generation settings panel to close it.
+- **Retry Failed Images** — Failed image tiles show a "Tap to retry" button that re-polls the API instead of being dead-ends.
+- **Production Board Onboarding** — Helpful hint when all Architect scenes are pending, guiding users to start generating.
+- **Image Grid Filtering** — Sticky filter bar above the Mosaic grid: All | Completed | Failed | Has Video — each with a live count badge.
+- **Bulk Select Mode** — Enter select mode to multi-pick images with checkboxes, then bulk download or bulk delete in one action.
+- **Touch Swipe Navigation** — Swipe left/right on images in MotionStudio to navigate between images on mobile (powered by Framer Motion drag).
+- **Topic History Search** — Filter input at the top of the Viral Architect topic history dropdown for quick lookup.
+
 ### Project Management
 - **Project Library** — Save, load, and manage multiple projects with persistent local storage.
 - **Auto-Save** — Projects are preserved across sessions via Zustand persistence.

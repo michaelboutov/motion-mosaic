@@ -1,27 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-interface NanoRequest {
-  imageUrl?: string
-  imageUrls?: string[]
+interface GptImageRequest {
+  imageUrls: string[]
   prompt: string
   aspectRatio?: string
-  resolution?: string
-  outputFormat?: string
+  quality?: string
 }
 
-interface NanoTaskRequest {
+interface GptImageTaskRequest {
   model: string
   callBackUrl?: string
   input: {
+    input_urls: string[]
     prompt: string
-    image_input?: string[]
     aspect_ratio: string
-    resolution: string
-    output_format: string
+    quality: string
   }
 }
 
-interface NanoTaskResponse {
+interface TaskResponse {
   code: number
   message: string
   data: {
@@ -31,9 +28,9 @@ interface NanoTaskResponse {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('Generate Nano request received')
+    console.log('Generate GPT Image request received')
 
-    let body: NanoRequest;
+    let body: GptImageRequest
     try {
       body = await request.json()
       console.log('Request body parsed:', JSON.stringify(body, null, 2))
@@ -46,25 +43,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Empty request body' }, { status: 400 })
     }
 
-    const { imageUrl, imageUrls, prompt, aspectRatio, resolution, outputFormat } = body
+    const { imageUrls, prompt, aspectRatio, quality } = body
     const authHeader = request.headers.get('Authorization')
     const apiKey = authHeader?.replace('Bearer ', '')
 
-    // Support both single imageUrl and array imageUrls
-    const imageInputUrls = imageUrls?.length
-      ? imageUrls
-      : imageUrl
-        ? [imageUrl]
-        : []
-    
-    console.log('Auth check:', { 
-      hasAuthHeader: !!authHeader, 
-      hasApiKey: !!apiKey, 
-      imageCount: imageInputUrls.length, 
-      prompt: !!prompt 
+    console.log('Auth check:', {
+      hasAuthHeader: !!authHeader,
+      hasApiKey: !!apiKey,
+      imageCount: imageUrls?.length || 0,
+      prompt: !!prompt
     })
 
-    if (imageInputUrls.length === 0 || !prompt || !apiKey) {
+    if (!imageUrls?.length || !prompt || !apiKey) {
       return NextResponse.json(
         { error: 'At least one image URL, prompt, and API key are required' },
         { status: 400 }
@@ -72,28 +62,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate all URLs
-    for (const url of imageInputUrls) {
+    for (const url of imageUrls) {
       try {
-        const urlObj = new URL(url);
+        const urlObj = new URL(url)
         if (!['http:', 'https:'].includes(urlObj.protocol)) {
-           return NextResponse.json({ error: `Image URL must be http or https: ${url}` }, { status: 400 })
+          return NextResponse.json({ error: `Image URL must be http or https: ${url}` }, { status: 400 })
         }
       } catch (e) {
         return NextResponse.json({ error: `Invalid Image URL format: ${url}` }, { status: 400 })
       }
     }
 
-    // Create Nano Banana Pro task
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    const taskRequest: NanoTaskRequest = {
-      model: 'nano-banana-pro',
+    // Create GPT Image 1.5 image-to-image task
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+    const taskRequest: GptImageTaskRequest = {
+      model: 'gpt-image/1.5-image-to-image',
       callBackUrl: `${baseUrl}/api/nano-callback`,
       input: {
+        input_urls: imageUrls,
         prompt: prompt,
-        image_input: imageInputUrls,
-        aspect_ratio: aspectRatio || '9:16',
-        resolution: resolution || '2K',
-        output_format: outputFormat || 'png'
+        aspect_ratio: aspectRatio || '2:3',
+        quality: quality || 'medium'
       }
     }
 
@@ -107,27 +96,27 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify(taskRequest)
     })
-    
+
     console.log('Upstream response status:', response.status)
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Upstream API error:', response.status, errorText);
+      const errorText = await response.text()
+      console.error('Upstream API error:', response.status, errorText)
       return NextResponse.json(
         { error: `Upstream error (${response.status}): ${errorText || response.statusText}` },
-        { status: 502 } // Bad Gateway for upstream failures
-      );
+        { status: 502 }
+      )
     }
 
-    const result: NanoTaskResponse = await response.json()
+    const result: TaskResponse = await response.json()
     console.log('Upstream result:', JSON.stringify(result, null, 2))
 
     if (result.code !== 200) {
-      console.error('Upstream API logical error:', result);
+      console.error('Upstream API logical error:', result)
       return NextResponse.json(
         { error: result.message || 'Upstream logical error' },
-        { status: 422 } // Unprocessable Entity for business logic failures
-      );
+        { status: 422 }
+      )
     }
 
     return NextResponse.json({
@@ -136,7 +125,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error in generate-nano:', error)
+    console.error('Error in generate-gpt-image:', error)
     const errorMessage = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
       { error: errorMessage },

@@ -6,7 +6,7 @@ import { useAppStore, Image } from '@/lib/store'
 import { useStudioHandlers } from '@/lib/useStudioHandlers'
 import { startPolling } from '@/lib/usePoll'
 import ApiKeyInput from '@/components/ApiKeyInput'
-import PromptInput from '@/components/PromptInput'
+import PromptInput, { GenerationSettings } from '@/components/PromptInput'
 import ImageGrid from '@/components/ImageGrid'
 import MotionStudio from '@/components/MotionStudio'
 import ParticleBubble from '@/components/ParticleBubble'
@@ -30,9 +30,16 @@ export default function Home() {
     addImages
   } = useAppStore()
   
-  const { selectedImage, isStudioOpen, handleImageClick, handleCloseStudio } = useStudioHandlers()
+  const { selectedImage, isStudioOpen, handleImageClick, handleCloseStudio, handleNavigate } = useStudioHandlers()
   const [viewMode, setViewMode] = useState<'mosaic' | 'architect'>('mosaic')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+
+  // Auto-open settings on first visit if no API key
+  useEffect(() => {
+    if (!kieApiKey && images.length === 0) {
+      setIsSettingsOpen(true)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle nano banana polling
   useEffect(() => {
@@ -109,7 +116,7 @@ export default function Home() {
   }, [activeVideoTasks, kieApiKey, removeVideoTask, setGeneratedVideo])
 
   // Handle image generation triggered by PromptInput
-  const handleGenerate = async (generationPrompt: string) => {
+  const handleGenerate = async (generationPrompt: string, settings?: GenerationSettings) => {
     if (!kieApiKey || isGeneratingImages) return
 
     // Initialize with 60 empty slots
@@ -130,7 +137,12 @@ export default function Home() {
         },
         body: JSON.stringify({
           prompt: generationPrompt,
-          apiKey: kieApiKey
+          apiKey: kieApiKey,
+          ...(settings && {
+            aspectRatio: settings.aspectRatio,
+            speed: settings.speed,
+            variety: settings.variety,
+          })
         })
       })
 
@@ -286,15 +298,68 @@ export default function Home() {
           {/* Main Content */}
           <div className="relative min-h-screen">
             {/* Empty State with Particle Bubble */}
-            {images.length === 0 && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
-                <ParticleBubble />
-                <div className="relative z-20 text-center p-8 bg-zinc-950/20 backdrop-blur-sm rounded-3xl border border-zinc-800/50">
-                  <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">MotionMosaic</h1>
-                  <p className="text-zinc-300 text-xl font-light">Describe your vision. Watch it come to life.</p>
-                </div>
-              </div>
-            )}
+            <AnimatePresence>
+              {images.length === 0 && !isGeneratingImages && (
+                <motion.div
+                  key="empty-state"
+                  initial={{ opacity: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.4, ease: 'easeOut' }}
+                  className="absolute inset-0 flex flex-col items-center justify-center z-10"
+                >
+                  <ParticleBubble />
+                  <div className="relative z-20 text-center p-8 bg-zinc-950/20 backdrop-blur-sm rounded-3xl border border-zinc-800/50">
+                    <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">MotionMosaic</h1>
+                    <p className="text-zinc-300 text-xl font-light mb-6">Describe your vision. Watch it come to life.</p>
+                    
+                    {!kieApiKey && (
+                      <p className="text-xs text-zinc-500 mb-6">
+                        Add your API key in <button onClick={() => setIsSettingsOpen(true)} className="text-amber-400 hover:text-amber-300 underline underline-offset-2 transition-colors">Settings (⚙️)</button> to get started
+                      </p>
+                    )}
+
+                    <div className="mt-2">
+                      <p className="text-xs text-zinc-500 uppercase tracking-widest mb-3">Quick Start Templates</p>
+                      <div className="flex flex-wrap justify-center gap-2 max-w-xl">
+                        {[
+                          { icon: '🌃', label: 'Cyberpunk street food vendor in rain' },
+                          { icon: '🏔️', label: 'Ethereal mountain temple at sunrise' },
+                          { icon: '🌊', label: 'Underwater bioluminescent coral city' },
+                          { icon: '🚀', label: 'Retro-futuristic space station lounge' },
+                          { icon: '🌸', label: 'Cherry blossom samurai duel at dusk' },
+                          { icon: '🔮', label: 'Neon witch apothecary in a dark alley' },
+                        ].map((t) => (
+                          <button
+                            key={t.label}
+                            onClick={() => useAppStore.getState().setPrompt(t.label)}
+                            className="px-4 py-2 bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-700/50 hover:border-amber-500/30 rounded-full text-sm text-zinc-300 hover:text-white transition-all"
+                          >
+                            {t.icon} {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Generating skeleton — shown between empty state fadeout and grid fadein */}
+            <AnimatePresence>
+              {images.length === 0 && isGeneratingImages && (
+                <motion.div
+                  key="generating-skeleton"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className="absolute inset-0 flex flex-col items-center justify-center z-10 gap-4"
+                >
+                  <div className="w-12 h-12 border-3 border-zinc-700 border-t-amber-500 rounded-full animate-spin" />
+                  <p className="text-zinc-400 text-sm font-medium animate-pulse">Generating your mosaic...</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Image Grid */}
             {images.length > 0 && (
@@ -328,6 +393,7 @@ export default function Home() {
                 isOpen={isStudioOpen}
                 onClose={handleCloseStudio}
                 selectedImage={selectedImage}
+                onNavigate={handleNavigate}
               />
             )}
           </AnimatePresence>

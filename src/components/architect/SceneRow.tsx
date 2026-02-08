@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useAppStore, Image } from '@/lib/store'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, RefreshCw, Loader2, Sparkles, Eye, Download, CheckCircle, Link2, Plus, X, GripVertical } from 'lucide-react'
+import { Play, RefreshCw, Loader2, Sparkles, Eye, Download, CheckCircle, Link2, Plus, X, GripVertical, Wand2 } from 'lucide-react'
 import { downloadFile } from '@/lib/utils'
 
 const MJ_PROMPT_LIMIT = 4000
@@ -36,7 +36,7 @@ interface SceneRowProps {
   onImportImage: (sceneId: number) => void
   onCancelImport: () => void
   onGenerateScene: (sceneId: number, tool: 'Midjourney' | 'Nano Banana', prompt: string) => void
-  onAnimateScene: (sceneId: number) => void
+  onAnimateScene: (sceneId: number, options?: { model?: 'seedream' | 'grok'; prompt?: string; duration?: string; mode?: string }) => void
   onImageClick: (image: Image) => void
   onImageError: (sceneId: number, imageId: string, taskId: string | undefined) => void
 }
@@ -57,7 +57,46 @@ export default function SceneRow({
   onImageClick,
   onImageError,
 }: SceneRowProps) {
-  const { updateScene } = useAppStore()
+  const { updateScene, kieApiKey, googleApiKey, provider } = useAppStore()
+  const [isEnhancing, setIsEnhancing] = useState(false)
+
+  const handleEnhancePrompt = async () => {
+    if (isEnhancing || !scene.prompt.trim()) return
+    const apiKey = provider === 'google' ? googleApiKey : kieApiKey
+    if (!apiKey) return
+    setIsEnhancing(true)
+    try {
+      const res = await fetch('/api/enhance-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: scene.prompt, apiKey, provider }),
+      })
+      const data = await res.json()
+      if (data.enhanced) {
+        updateScene(scene.id, { prompt: data.enhanced })
+      }
+    } catch (e) {
+      console.error('Failed to enhance prompt:', e)
+    } finally {
+      setIsEnhancing(false)
+    }
+  }
+
+  // Video generation settings
+  const [showVideoSettings, setShowVideoSettings] = useState(false)
+  const [videoModel, setVideoModel] = useState<'seedream' | 'grok'>('seedream')
+  const [videoPrompt, setVideoPrompt] = useState(scene.grokMotion || '')
+  const [grokDuration, setGrokDuration] = useState<'6' | '10'>('6')
+  const [grokMode, setGrokMode] = useState<'normal' | 'fun'>('normal')
+
+  const handleStartAnimate = () => {
+    onAnimateScene(scene.id, {
+      model: videoModel,
+      prompt: videoPrompt,
+      ...(videoModel === 'grok' && { duration: grokDuration, mode: grokMode }),
+    })
+    setShowVideoSettings(false)
+  }
 
   return (
     <div className="group hover:bg-zinc-800/20 transition-colors border-b border-zinc-800/30 last:border-b-0">
@@ -93,22 +132,37 @@ export default function SceneRow({
                 <Sparkles className="w-2 h-2" /> Lip-Sync Required
               </span>
             )}
-            <span className="text-[10px] text-zinc-500 font-mono italic">
-              3s
-            </span>
+            {scene.video?.status === 'done' && (
+              <span className="text-[10px] text-zinc-500 font-mono italic">
+                Video Ready
+              </span>
+            )}
           </div>
           <textarea
             value={scene.prompt}
             onChange={(e) => updateScene(scene.id, { prompt: e.target.value })}
             disabled={scene.status === 'generating'}
-            className={`w-full text-xs text-zinc-400 font-mono bg-zinc-950/30 backdrop-blur-sm p-2 rounded border focus:outline-none focus:ring-1 focus:ring-amber-500/20 resize-y min-h-[60px] disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`w-full text-xs text-zinc-400 font-mono bg-zinc-950/30 backdrop-blur-sm p-2 rounded-lg border focus:outline-none focus:ring-1 focus:ring-amber-500/20 resize-y min-h-[60px] disabled:opacity-50 disabled:cursor-not-allowed ${
               scene.prompt.length > MJ_PROMPT_LIMIT
                 ? 'border-red-500/50 focus:border-red-500/50'
                 : 'border-zinc-800/30 focus:border-amber-500/50'
             }`}
             placeholder="Enter scene prompt..."
           />
-          <div className="flex justify-end mt-1">
+          <div className="flex justify-between items-center mt-1">
+            <button
+              onClick={handleEnhancePrompt}
+              disabled={isEnhancing || !scene.prompt.trim() || scene.status === 'generating'}
+              className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Enhance prompt with AI"
+            >
+              {isEnhancing ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Wand2 className="w-3 h-3" />
+              )}
+              {isEnhancing ? 'Enhancing...' : '✨ Enhance'}
+            </button>
             <span className={`text-[10px] font-mono ${
               scene.prompt.length > MJ_PROMPT_LIMIT ? 'text-red-400' :
               scene.prompt.length > MJ_PROMPT_LIMIT * 0.875 ? 'text-amber-400' : 'text-zinc-600'
@@ -141,14 +195,19 @@ export default function SceneRow({
             {scene.status === 'generating' ? 'Generating...' : scene.status === 'done' ? 'Regenerate' : 'Generate'}
           </button>
 
-          {/* Animate Button (Grok Motion) */}
+          {/* Animate Button (Image to Video) */}
           {scene.status === 'done' && (
             <button
-              onClick={() => onAnimateScene(scene.id)}
+              onClick={() => {
+                if (scene.video?.status === 'generating') return
+                setShowVideoSettings(!showVideoSettings)
+              }}
               disabled={scene.video?.status === 'generating'}
               className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
                 scene.video?.status === 'generating'
                   ? 'bg-purple-900/50 text-purple-300 cursor-wait'
+                  : showVideoSettings
+                  ? 'bg-purple-600 text-white ring-2 ring-purple-400/50'
                   : scene.video?.status === 'done'
                   ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20'
                   : 'bg-purple-600 text-white hover:bg-purple-500 shadow-[0_0_15px_rgba(147,51,234,0.3)]'
@@ -184,6 +243,120 @@ export default function SceneRow({
           </button>
         </div>
       </div>
+
+      {/* Video Settings Panel */}
+      <AnimatePresence>
+        {showVideoSettings && scene.status === 'done' && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden border-t border-purple-500/20 bg-purple-950/10"
+          >
+            <div className="p-4 space-y-4 max-w-2xl">
+              {/* Model Selector */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Model</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setVideoModel('seedream')}
+                    className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-all ${
+                      videoModel === 'seedream'
+                        ? 'bg-purple-500/10 border-purple-500 text-purple-400'
+                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
+                    }`}
+                  >
+                    Seedream (Standard)
+                  </button>
+                  <button
+                    onClick={() => setVideoModel('grok')}
+                    className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-all ${
+                      videoModel === 'grok'
+                        ? 'bg-purple-500/10 border-purple-500 text-purple-400'
+                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
+                    }`}
+                  >
+                    Grok (High Quality)
+                  </button>
+                </div>
+              </div>
+
+              {/* Grok-specific options */}
+              {videoModel === 'grok' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">Duration</label>
+                    <div className="flex gap-1">
+                      {(['6', '10'] as const).map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => setGrokDuration(d)}
+                          className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors border ${
+                            grokDuration === d
+                              ? 'bg-purple-500/10 border-purple-500 text-purple-400'
+                              : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
+                          }`}
+                        >
+                          {d}s
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">Mode</label>
+                    <div className="flex gap-1">
+                      {(['normal', 'fun'] as const).map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setGrokMode(m)}
+                          className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors border ${
+                            grokMode === m
+                              ? 'bg-purple-500/10 border-purple-500 text-purple-400'
+                              : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
+                          }`}
+                        >
+                          {m.charAt(0).toUpperCase() + m.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Video Prompt */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Video Prompt</label>
+                <textarea
+                  value={videoPrompt}
+                  onChange={(e) => setVideoPrompt(e.target.value)}
+                  placeholder="Describe how you want to animate the image..."
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-xs text-white placeholder-zinc-600 focus:ring-1 focus:ring-purple-500/50 focus:border-purple-500/50 outline-none resize-none h-20"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleStartAnimate}
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(147,51,234,0.3)]"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  {scene.video?.status === 'done' ? 'Re-animate' : 'Start Animation'}
+                </button>
+                <button
+                  onClick={() => setShowVideoSettings(false)}
+                  className="px-4 py-2 text-zinc-500 hover:text-white text-xs rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <span className="text-[10px] text-zinc-600">
+                  {videoModel === 'seedream' ? 'Seedance 1.5 Pro' : 'Grok Imagine Video'}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* URL Import Input */}
       <AnimatePresence>
@@ -275,7 +448,7 @@ export default function SceneRow({
                        } ${!img.url || img.url === '' ? 'opacity-50' : ''}`}
                        onClick={() => {
                          updateScene(scene.id, { selectedImageId: img.id })
-                         onImageClick(img)
+                         onImageClick({ ...img, videoPrompt: scene.grokMotion })
                        }}
                      >
                        {img.url && img.url !== '' ? (
@@ -312,7 +485,7 @@ export default function SceneRow({
                        )}
 
                        {/* Hover Overlay */}
-                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity pointer-events-none flex items-center justify-center backdrop-blur-[2px]">
                          <div className="flex items-center gap-2">
                            <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-medium text-white border border-white/20">
                              <Eye className="w-3 h-3 inline mr-1" />
