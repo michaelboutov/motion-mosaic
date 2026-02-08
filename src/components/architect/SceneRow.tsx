@@ -5,6 +5,7 @@ import { useAppStore, Image } from '@/lib/store'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, RefreshCw, Loader2, Sparkles, Eye, Download, CheckCircle, Link2, Plus, X, GripVertical, Wand2 } from 'lucide-react'
 import { downloadFile } from '@/lib/utils'
+import VideoSettings, { VideoSettingsValues } from '@/components/VideoSettings'
 
 const MJ_PROMPT_LIMIT = 4000
 
@@ -84,16 +85,18 @@ export default function SceneRow({
 
   // Video generation settings
   const [showVideoSettings, setShowVideoSettings] = useState(false)
-  const [videoModel, setVideoModel] = useState<'seedream' | 'grok'>('seedream')
-  const [videoPrompt, setVideoPrompt] = useState(scene.grokMotion || '')
-  const [grokDuration, setGrokDuration] = useState<'6' | '10'>('6')
-  const [grokMode, setGrokMode] = useState<'normal' | 'fun'>('normal')
+  const [videoSettings, setVideoSettings] = useState<VideoSettingsValues>({
+    model: 'seedance',
+    prompt: scene.grokMotion || '',
+    grokDuration: '6',
+    grokMode: 'normal',
+  })
 
   const handleStartAnimate = () => {
     onAnimateScene(scene.id, {
-      model: videoModel,
-      prompt: videoPrompt,
-      ...(videoModel === 'grok' && { duration: grokDuration, mode: grokMode }),
+      model: videoSettings.model === 'seedance' ? 'seedream' : 'grok',
+      prompt: videoSettings.prompt,
+      ...(videoSettings.model === 'grok' && { duration: videoSettings.grokDuration, mode: videoSettings.grokMode }),
     })
     setShowVideoSettings(false)
   }
@@ -254,85 +257,12 @@ export default function SceneRow({
             className="overflow-hidden border-t border-purple-500/20 bg-purple-950/10"
           >
             <div className="p-4 space-y-4 max-w-2xl">
-              {/* Model Selector */}
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-2">Model</label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setVideoModel('seedream')}
-                    className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-all ${
-                      videoModel === 'seedream'
-                        ? 'bg-purple-500/10 border-purple-500 text-purple-400'
-                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                    }`}
-                  >
-                    Seedream (Standard)
-                  </button>
-                  <button
-                    onClick={() => setVideoModel('grok')}
-                    className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-all ${
-                      videoModel === 'grok'
-                        ? 'bg-purple-500/10 border-purple-500 text-purple-400'
-                        : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                    }`}
-                  >
-                    Grok (High Quality)
-                  </button>
-                </div>
-              </div>
-
-              {/* Grok-specific options */}
-              {videoModel === 'grok' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">Duration</label>
-                    <div className="flex gap-1">
-                      {(['6', '10'] as const).map((d) => (
-                        <button
-                          key={d}
-                          onClick={() => setGrokDuration(d)}
-                          className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors border ${
-                            grokDuration === d
-                              ? 'bg-purple-500/10 border-purple-500 text-purple-400'
-                              : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                          }`}
-                        >
-                          {d}s
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-500 mb-1.5">Mode</label>
-                    <div className="flex gap-1">
-                      {(['normal', 'fun'] as const).map((m) => (
-                        <button
-                          key={m}
-                          onClick={() => setGrokMode(m)}
-                          className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors border ${
-                            grokMode === m
-                              ? 'bg-purple-500/10 border-purple-500 text-purple-400'
-                              : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                          }`}
-                        >
-                          {m.charAt(0).toUpperCase() + m.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Video Prompt */}
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-2">Video Prompt</label>
-                <textarea
-                  value={videoPrompt}
-                  onChange={(e) => setVideoPrompt(e.target.value)}
-                  placeholder="Describe how you want to animate the image..."
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-xs text-white placeholder-zinc-600 focus:ring-1 focus:ring-purple-500/50 focus:border-purple-500/50 outline-none resize-none h-20"
-                />
-              </div>
+              <VideoSettings
+                values={videoSettings}
+                onChange={(updates) => setVideoSettings(prev => ({ ...prev, ...updates }))}
+                accentColor="purple"
+                compact
+              />
 
               {/* Action Buttons */}
               <div className="flex items-center gap-3">
@@ -350,7 +280,7 @@ export default function SceneRow({
                   Cancel
                 </button>
                 <span className="text-[10px] text-zinc-600">
-                  {videoModel === 'seedream' ? 'Seedance 1.5 Pro' : 'Grok Imagine Video'}
+                  {videoSettings.model === 'seedance' ? 'Seedance 1.5 Pro' : 'Grok Imagine Video'}
                 </span>
               </div>
             </div>

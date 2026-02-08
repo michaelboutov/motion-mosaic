@@ -38,15 +38,18 @@ MotionMosaic is a full-stack creative studio that turns text prompts into produc
 - **Genre Templates** — Quick-start with Horror, Sci-Fi, Documentary, Thriller, Fantasy, Drama, Comedy, and Cyberpunk presets.
 
 ### UX Enhancements
-- **Smart Empty State** — Animated transition from landing screen to loading skeleton when generation starts, so you always know something is happening.
+- **AI Director Chat** — Conversational AI assistant that understands your project context and can perform actions like setting topics, updating scene prompts, applying narration, and adding new scenes through natural language.
 - **Prompt Character Counter** — Live character count (4000 limit) with amber/red color warnings on the Mosaic prompt input.
 - **Backdrop Dismiss** — Click outside the generation settings panel to close it.
-- **Retry Failed Images** — Failed image tiles show a "Tap to retry" button that re-polls the API instead of being dead-ends.
+- **Smart Empty State** — Animated transition from landing screen to loading skeleton when generation starts, so you always know something is happening.
+- **Video Settings Panel** — Choose between Seedance (standard) or Grok (high quality) video models with customizable duration and mode options.
+- **Task Image Refresh** — Manually refresh image URLs for completed tasks to ensure they're still valid before download.
 - **Production Board Onboarding** — Helpful hint when all Architect scenes are pending, guiding users to start generating.
 - **Image Grid Filtering** — Sticky filter bar above the Mosaic grid: All | Completed | Failed | Has Video — each with a live count badge.
 - **Bulk Select Mode** — Enter select mode to multi-pick images with checkboxes, then bulk download or bulk delete in one action.
 - **Touch Swipe Navigation** — Swipe left/right on images in MotionStudio to navigate between images on mobile (powered by Framer Motion drag).
 - **Topic History Search** — Filter input at the top of the Viral Architect topic history dropdown for quick lookup.
+- **Retry Failed Images** — Failed image tiles show a "Tap to retry" button that re-polls the API instead of being dead-ends.
 
 ### Project Management
 - **Project Library** — Save, load, and manage multiple projects with persistent local storage.
@@ -108,6 +111,7 @@ src/
 ├── app/
 │   ├── api/
 │   │   ├── architect/              # Viral Architect AI strategy endpoint
+│   │   ├── director-chat/          # AI Director chat endpoint
 │   │   ├── generate-batch/         # Batch image generation + callback
 │   │   ├── generate-images/        # Single image generation
 │   │   ├── generate-nano/          # Nano Banana Pro editing
@@ -121,26 +125,32 @@ src/
 │   ├── layout.tsx                  # Root layout
 │   └── globals.css                 # Global styles
 ├── components/
-│   ├── ViralArchitect.tsx          # Full Viral Architect workspace
-│   ├── MotionStudio.tsx            # Image/video studio modal
-│   ├── ProjectLibrary.tsx          # Save/load project manager
-│   ├── ImageGrid.tsx               # Mosaic image grid
-│   ├── PromptInput.tsx             # Prompt + generation controls
+│   ├── AnimatedSpinner.tsx         # Loading animation component
 │   ├── ApiKeyInput.tsx             # Runtime API key input
+│   ├── ComparisonSlider.tsx        # Before/after image comparison
 │   ├── ConfirmDialog.tsx           # Reusable confirmation modal
-│   ├── Toast.tsx                   # Toast notification system
+│   ├── DirectorChat.tsx            # AI Director chat assistant
+│   ├── ImageGrid.tsx               # Mosaic image grid
+│   ├── MotionStudio.tsx            # Image/video studio modal
 │   ├── ParticleBubble.tsx          # Animated particle effects
+│   ├── ProjectLibrary.tsx          # Save/load project manager
+│   ├── PromptInput.tsx             # Prompt + generation controls
+│   ├── Toast.tsx                   # Toast notification system
+│   ├── VideoSettings.tsx           # Video model & options panel
 │   └── architect/
-│       ├── StrategyCard.tsx        # AI strategy display
-│       ├── ScriptCard.tsx          # Generated script viewer
 │       ├── SceneRow.tsx            # Individual scene controls
+│       ├── ScriptCard.tsx          # Generated script viewer
+│       ├── StrategyCard.tsx        # AI strategy display
 │       ├── DesignProgress.tsx      # Generation progress indicator
 │       └── TimelineView.tsx        # Horizontal scene timeline
 └── lib/
+    ├── refreshTaskImages.ts        # Task image URL refresh utility
     ├── store.ts                    # Zustand store (state + persistence)
     ├── useArchitectActions.ts      # Architect business logic hook
-    ├── useStudioHandlers.ts        # Studio interaction hook
+    ├── useDirectorContext.ts       # AI Director context builder
+    ├── useMosaicPolling.ts         # Mosaic-level polling hook
     ├── usePoll.ts                  # Generic async polling utility
+    ├── useStudioHandlers.ts        # Studio interaction hook
     └── utils.ts                    # Shared helpers (download, etc.)
 ```
 

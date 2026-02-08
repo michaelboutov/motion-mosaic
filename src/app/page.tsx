@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore, Image } from '@/lib/store'
 import { useStudioHandlers } from '@/lib/useStudioHandlers'
+import { useMosaicPolling } from '@/lib/useMosaicPolling'
 import { startPolling } from '@/lib/usePoll'
 import ApiKeyInput from '@/components/ApiKeyInput'
 import PromptInput, { GenerationSettings } from '@/components/PromptInput'
@@ -11,7 +12,8 @@ import ImageGrid from '@/components/ImageGrid'
 import MotionStudio from '@/components/MotionStudio'
 import ParticleBubble from '@/components/ParticleBubble'
 import ViralArchitect from '@/components/ViralArchitect'
-import { LayoutGrid, Clapperboard, Settings } from 'lucide-react'
+import DirectorChat from '@/components/DirectorChat'
+import { LayoutGrid, Clapperboard, Settings, MessageCircle } from 'lucide-react'
 
 export default function Home() {
   const { 
@@ -22,17 +24,16 @@ export default function Home() {
     setImages, 
     setIsGeneratingImages,
     updateImage,
-    activeVideoTasks,
-    removeVideoTask,
-    setGeneratedVideo,
-    activeNanoTasks,
-    removeNanoTask,
-    addImages
   } = useAppStore()
   
+  const directorIsOpen = useAppStore((s) => s.directorChat.isOpen)
+  const toggleDirectorChat = useAppStore((s) => s.toggleDirectorChat)
   const { selectedImage, isStudioOpen, handleImageClick, handleCloseStudio, handleNavigate } = useStudioHandlers()
   const [viewMode, setViewMode] = useState<'mosaic' | 'architect'>('mosaic')
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+
+  // Nano + Video polling (extracted to dedicated hook)
+  useMosaicPolling()
 
   // Auto-open settings on first visit if no API key
   useEffect(() => {
@@ -40,80 +41,6 @@ export default function Home() {
       setIsSettingsOpen(true)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Handle nano banana polling
-  useEffect(() => {
-    if (activeNanoTasks.length === 0) return
-
-    const cancellers = activeNanoTasks.map((task) =>
-      startPolling({
-        intervalMs: 5000,
-        maxAttempts: 60,
-        checkFn: async () => {
-          const response = await fetch(`/api/nano-callback?taskId=${task.taskId}`, {
-            headers: { Authorization: `Bearer ${kieApiKey}` },
-            cache: 'no-store',
-          })
-          const result = await response.json()
-
-          if (result.status === 'success' && result.imageUrls && result.imageUrls.length > 0) {
-            const newImages: Image[] = result.imageUrls.map((url: string, index: number) => ({
-              id: `nano-${task.taskId}-${index}`,
-              url,
-              status: 'done',
-              prompt: `Nano Banana edit of ${task.sourceImageId}`,
-            }))
-            addImages(newImages)
-            removeNanoTask(task.taskId)
-            return 'done'
-          } else if (result.status === 'fail') {
-            console.error(`Nano task ${task.taskId} failed:`, result.error)
-            removeNanoTask(task.taskId)
-            return 'done'
-          }
-          return 'continue'
-        },
-      })
-    )
-
-    return () => cancellers.forEach((cancel) => cancel())
-  }, [activeNanoTasks, kieApiKey, removeNanoTask, addImages])
-
-  // Handle video generation polling
-  useEffect(() => {
-    if (activeVideoTasks.length === 0) return
-
-    const cancellers = activeVideoTasks.map((task) =>
-      startPolling({
-        intervalMs: 5000,
-        maxAttempts: 120,
-        checkFn: async () => {
-          const response = await fetch(`/api/video-callback?taskId=${task.taskId}`, {
-            headers: { Authorization: `Bearer ${kieApiKey}` },
-            cache: 'no-store',
-          })
-          const result = await response.json()
-
-          if (result.status === 'success' && result.videoUrl) {
-            setGeneratedVideo(task.imageId, {
-              url: result.videoUrl,
-              taskId: task.taskId,
-              model: task.model || 'unknown',
-            })
-            removeVideoTask(task.taskId)
-            return 'done'
-          } else if (result.status === 'fail') {
-            console.error(`Video task ${task.taskId} failed:`, result.error)
-            removeVideoTask(task.taskId)
-            return 'done'
-          }
-          return 'continue'
-        },
-      })
-    )
-
-    return () => cancellers.forEach((cancel) => cancel())
-  }, [activeVideoTasks, kieApiKey, removeVideoTask, setGeneratedVideo])
 
   // Handle image generation triggered by PromptInput
   const handleGenerate = async (generationPrompt: string, settings?: GenerationSettings) => {
@@ -176,76 +103,63 @@ export default function Home() {
     }
   }
 
-  const pollForResults = async (tasks: any[]) => {
-    // Keep track of which tasks are finished so we don't poll them again
+  const pollForResults = (tasks: any[]) => {
     const completedTaskIds = new Set<string>()
 
-    const checkTasks = async () => {
-      let pendingCount = 0
+    startPolling({
+      intervalMs: 2000,
+      maxAttempts: 300,
+      onTimeout: () => setIsGeneratingImages(false),
+      checkFn: async () => {
+        let pendingCount = 0
 
-      for (const task of tasks) {
-        // Skip already completed tasks
-        if (completedTaskIds.has(task.taskId)) continue
+        for (const task of tasks) {
+          if (completedTaskIds.has(task.taskId)) continue
 
-        try {
-          const response = await fetch(`/api/midjourney-callback?taskId=${task.taskId}`, {
-            headers: {
-              'Authorization': `Bearer ${kieApiKey}`
-            },
-            cache: 'no-store'
-          })
-          const result = await response.json()
-
-          if (result.status === 'success' && result.resultUrls) {
-            // Mark task as completed
-            completedTaskIds.add(task.taskId)
-
-            // Update images with results
-            result.resultUrls.forEach((url: string, index: number) => {
-              const imageIndex = task.batchIndex * 4 + index
-              if (imageIndex < 60) {
-                updateImage(`empty-${imageIndex}`, {
-                  id: `image-${task.taskId}-${index}`,
-                  url,
-                  status: 'done',
-                  prompt
-                })
-              }
+          try {
+            const response = await fetch(`/api/midjourney-callback?taskId=${task.taskId}`, {
+              headers: { Authorization: `Bearer ${kieApiKey}` },
+              cache: 'no-store',
             })
-          } else if (result.status === 'fail') {
-            console.error(`Task ${task.taskId} failed`)
-            
-            // Mark task as completed (failed)
-            completedTaskIds.add(task.taskId)
+            const result = await response.json()
 
-            // Mark as failed
-            for (let i = 0; i < 4; i++) {
-              const imageIndex = task.batchIndex * 4 + i
-              if (imageIndex < 60) {
-                updateImage(`empty-${imageIndex}`, {
-                  status: 'error'
-                })
+            if (result.status === 'success' && result.resultUrls) {
+              completedTaskIds.add(task.taskId)
+              result.resultUrls.forEach((url: string, index: number) => {
+                const imageIndex = task.batchIndex * 4 + index
+                if (imageIndex < 60) {
+                  updateImage(`empty-${imageIndex}`, {
+                    id: `image-${task.taskId}-${index}`,
+                    url,
+                    status: 'done',
+                    prompt,
+                  })
+                }
+              })
+            } else if (result.status === 'fail') {
+              completedTaskIds.add(task.taskId)
+              for (let i = 0; i < 4; i++) {
+                const imageIndex = task.batchIndex * 4 + i
+                if (imageIndex < 60) {
+                  updateImage(`empty-${imageIndex}`, { status: 'error' })
+                }
               }
+            } else {
+              pendingCount++
             }
-          } else {
-            // Still pending
+          } catch (error) {
+            console.error('Error checking task:', error)
             pendingCount++
           }
-        } catch (error) {
-          console.error('Error checking task:', error)
-          // Treat error as pending to retry
-          pendingCount++
         }
-      }
 
-      if (pendingCount > 0) {
-        setTimeout(checkTasks, 2000) // Poll every 2 seconds
-      } else {
-        setIsGeneratingImages(false)
-      }
-    }
-
-    checkTasks()
+        if (pendingCount === 0) {
+          setIsGeneratingImages(false)
+          return 'done'
+        }
+        return 'continue'
+      },
+    })
   }
 
   return (
@@ -254,13 +168,25 @@ export default function Home() {
       <ApiKeyInput isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       {/* View Mode Toggle */}
-      <div className="fixed top-6 right-6 z-50 flex bg-zinc-900/90 backdrop-blur-md rounded-full p-1.5 border border-zinc-800 shadow-xl items-center gap-1">
+      <div className={`fixed top-6 z-50 flex bg-zinc-900/90 backdrop-blur-md rounded-full p-1.5 border border-zinc-800 shadow-xl items-center gap-1 transition-all duration-300 ${directorIsOpen ? 'right-[416px]' : 'right-6'}`}>
         <button
           onClick={() => setIsSettingsOpen(true)}
           className="p-2.5 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-all"
           title="Settings"
         >
           <Settings className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={toggleDirectorChat}
+          className={`p-2.5 rounded-full transition-all ${
+            directorIsOpen
+              ? 'text-amber-400 bg-amber-500/10'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+          }`}
+          title="Director AI"
+        >
+          <MessageCircle className="w-4 h-4" />
         </button>
         
         <div className="w-px h-4 bg-zinc-800 mx-1" />
@@ -399,6 +325,8 @@ export default function Home() {
           </AnimatePresence>
         </>
       )}
+      {/* Director AI Chat Panel */}
+      <DirectorChat viewMode={viewMode} />
     </div>
   )
 }

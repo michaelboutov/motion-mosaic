@@ -57,6 +57,15 @@ export interface AppState {
     isGenerating: boolean
   }
 
+  // Swap prompt (set by Director AI, consumed by MotionStudio)
+  swapPrompt: string
+
+  // Director Chat
+  directorChat: {
+    isOpen: boolean
+    messages: { role: 'user' | 'director'; content: string; screenshot?: string; timestamp: number }[]
+  }
+
   // Saved Projects
   savedProjects: SavedProject[]
 
@@ -86,6 +95,12 @@ export interface AppState {
   newProject: () => void
   reset: () => void
   clearPersistence: () => void
+  setSwapPrompt: (prompt: string) => void
+  // Director Chat Actions
+  toggleDirectorChat: () => void
+  addDirectorMessage: (msg: { role: 'user' | 'director'; content: string; screenshot?: string }) => void
+  clearDirectorChat: () => void
+
   // Project Actions
   saveProject: (project: Omit<SavedProject, 'id' | 'createdAt'>) => void
   deleteProject: (id: string) => void
@@ -117,6 +132,11 @@ const initialState = {
     script: null,
     scenes: [],
     isGenerating: false
+  },
+  swapPrompt: '',
+  directorChat: {
+    isOpen: false,
+    messages: []
   },
   savedProjects: []
 }
@@ -204,6 +224,23 @@ export const useAppStore = create<AppState>((set) => ({
     return { architect: { ...state.architect, scenes: reindexed } }
   }),
 
+  setSwapPrompt: (prompt) => set({ swapPrompt: prompt }),
+
+  toggleDirectorChat: () => set((state) => ({
+    directorChat: { ...state.directorChat, isOpen: !state.directorChat.isOpen }
+  })),
+
+  addDirectorMessage: (msg) => set((state) => ({
+    directorChat: {
+      ...state.directorChat,
+      messages: [...state.directorChat.messages, { ...msg, timestamp: Date.now() }]
+    }
+  })),
+
+  clearDirectorChat: () => set((state) => ({
+    directorChat: { ...state.directorChat, messages: [] }
+  })),
+
   saveProject: (projectData) => set((state) => {
     const newProject: SavedProject = {
       id: crypto.randomUUID(),
@@ -243,7 +280,9 @@ export const useAppStore = create<AppState>((set) => ({
       script: null,
       scenes: [],
       isGenerating: false
-    }
+    },
+    swapPrompt: '',
+    directorChat: { isOpen: false, messages: [] }
   })),
 
   reset: () => set(initialState),

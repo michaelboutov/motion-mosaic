@@ -7,6 +7,8 @@ import { X, Download, Share, Sparkles, Wand2, Users, Plus, Link2, ImageIcon, Che
 import ComparisonSlider from '@/components/ComparisonSlider'
 import { downloadFile } from '@/lib/utils'
 import { useToast } from '@/components/Toast'
+import VideoSettings, { VideoSettingsValues } from '@/components/VideoSettings'
+import AnimatedSpinner from '@/components/AnimatedSpinner'
 
 interface MotionStudioProps {
   isOpen: boolean
@@ -23,7 +25,9 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
     setGeneratedVideo,
     kieApiKey,
     addNanoTask,
-    architect
+    architect,
+    swapPrompt,
+    setSwapPrompt
   } = useAppStore()
   
   const { toast } = useToast()
@@ -33,9 +37,12 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
   const [nanoPrompt, setNanoPrompt] = useState('')
 
   // Video Generation State
-  const [selectedModel, setSelectedModel] = useState<'seedance' | 'grok'>('seedance')
-  const [grokDuration, setGrokDuration] = useState<'6' | '10'>('6')
-  const [grokMode, setGrokMode] = useState<'normal' | 'fun'>('normal')
+  const [videoSettings, setVideoSettings] = useState<VideoSettingsValues>({
+    model: 'seedance',
+    prompt: '',
+    grokDuration: '6',
+    grokMode: 'normal',
+  })
 
   const videoData = selectedImage ? generatedVideos[selectedImage.id] : null
   const videoUrl = videoData?.url
@@ -47,16 +54,32 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
 
   const isGeneratingThisVideo = selectedImage ? activeVideoTasks.some(t => t.imageId === selectedImage.id) : false
 
-  const [videoPrompt, setVideoPrompt] = useState('')
   const [showRegenSettings, setShowRegenSettings] = useState(false)
 
   // Character Swap State
   const [swapCharacterRefs, setSwapCharacterRefs] = useState<{ id: string; url: string; label: string; prompt: string }[]>([])
+
+  // Sync swap prompt from store (set by Director AI) into character ref prompts
+  useEffect(() => {
+    if (swapPrompt) {
+      setSwapCharacterRefs(prev =>
+        prev.length > 0
+          ? prev.map(r => ({ ...r, prompt: swapPrompt }))
+          : prev
+      )
+      setSwapPrompt('')
+    }
+  }, [swapPrompt, setSwapPrompt])
   const [swapCharacterCount, setSwapCharacterCount] = useState(1)
   const [swapImportUrl, setSwapImportUrl] = useState('')
   const [activeSlotIndex, setActiveSlotIndex] = useState<number | null>(null)
   const [swapModel, setSwapModel] = useState<'nano' | 'gpt'>('nano')
   const [showComparison, setShowComparison] = useState(false)
+
+  // Find which scene owns the selected image (for grokMotion sync)
+  const ownerScene = selectedImage
+    ? architect.scenes.find(s => s.images.some(img => img.id === selectedImage.id))
+    : undefined
 
   // All scene images available for picking
   const allSceneImages = architect.scenes.flatMap(scene =>
@@ -115,14 +138,24 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
   // Initialize prompts when selectedImage changes
   useEffect(() => {
     if (selectedImage) {
-      setVideoPrompt(selectedImage.videoPrompt || selectedImage.prompt || '')
+      // Prefer scene's grokMotion > image's videoPrompt > image's prompt
+      const sceneMotion = ownerScene?.grokMotion
+      setVideoSettings(prev => ({ ...prev, prompt: sceneMotion || selectedImage.videoPrompt || selectedImage.prompt || '' }))
       setNanoPrompt(selectedImage.prompt || '')
       setSwapCharacterRefs([])
       setSwapCharacterCount(1)
       setActiveSlotIndex(null)
       setShowComparison(false)
     }
-  }, [selectedImage?.id])
+  }, [selectedImage?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reactively sync when Director AI updates grokMotion on the owner scene
+  const ownerGrokMotion = ownerScene?.grokMotion
+  useEffect(() => {
+    if (ownerGrokMotion) {
+      setVideoSettings(prev => ({ ...prev, prompt: ownerGrokMotion }))
+    }
+  }, [ownerGrokMotion])
 
   const handleGenerateVideo = async () => {
     if (!selectedImage || !kieApiKey) return
@@ -130,7 +163,7 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
     setLocalIsGenerating(true)
     setActiveTab('output')
     setActiveTool('video')
-    setLastGeneratedModel(selectedModel)
+    setLastGeneratedModel(videoSettings.model)
 
     try {
       const response = await fetch('/api/generate-video', {
@@ -141,12 +174,11 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
         },
         body: JSON.stringify({
           imageUrl: selectedImage.url,
-          prompt: videoPrompt || selectedImage.prompt || 'Animate this image',
-          model: selectedModel === 'grok' ? 'grok-imagine/image-to-video' : 'bytedance/seedance-1.5-pro',
-          // Grok specific params
-          ...(selectedModel === 'grok' && {
-            duration: grokDuration,
-            mode: grokMode
+          prompt: videoSettings.prompt || selectedImage.prompt || 'Animate this image',
+          model: videoSettings.model === 'grok' ? 'grok-imagine/image-to-video' : 'bytedance/seedance-1.5-pro',
+          ...(videoSettings.model === 'grok' && {
+            duration: videoSettings.grokDuration,
+            mode: videoSettings.grokMode
           })
         })
       })
@@ -154,7 +186,7 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
       const result = await response.json()
 
       if (result.success && result.taskId) {
-        addVideoTask(result.taskId, selectedImage.id, selectedModel)
+        addVideoTask(result.taskId, selectedImage.id, videoSettings.model)
       } else {
         console.error('Video generation failed:', result.error)
       }
@@ -522,99 +554,19 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
               // VIDEO TOOL UI
               isGeneratingThisVideo || localIsGenerating ? (
                 /* State C: Generating Video */
-                <div className="text-center px-4">
-                  <div className="group relative inline-flex h-12 overflow-hidden rounded-full p-[1px]">
-                    <span className="absolute inset-[-1000%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2E8F0_0%,#f59e0b_50%,#E2E8F0_100%)]" />
-                    <span className="inline-flex h-full w-full items-center justify-center rounded-full bg-slate-950 px-8 py-1 text-sm font-medium text-white backdrop-blur-3xl">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Generating Video...
-                    </span>
-                  </div>
-                  <p className="mt-4 text-xs text-zinc-500">You can close this window, generation will continue in background</p>
-                </div>
+                <AnimatedSpinner
+                  label="Generating Video..."
+                  subtitle="You can close this window, generation will continue in background"
+                  color="amber"
+                />
               ) : !videoUrl ? (
                 /* State A: Not Generated Yet */
                 <div className="text-center px-4 w-full max-w-md">
                   <div className="mb-6">
-                    <label className="block text-sm font-medium text-zinc-400 mb-2 text-left">
-                      Model
-                    </label>
-                    <div className="flex gap-2 mb-4">
-                      <button
-                        onClick={() => setSelectedModel('seedance')}
-                        className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-colors ${
-                          selectedModel === 'seedance'
-                            ? 'bg-amber-500/10 border-amber-500 text-amber-500'
-                            : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                        }`}
-                      >
-                        Seedance (Standard)
-                      </button>
-                      <button
-                        onClick={() => setSelectedModel('grok')}
-                        className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-colors ${
-                          selectedModel === 'grok'
-                            ? 'bg-amber-500/10 border-amber-500 text-amber-500'
-                            : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                        }`}
-                      >
-                        Grok (High Quality)
-                      </button>
-                    </div>
-
-                    {selectedModel === 'grok' && (
-                      <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div>
-                          <label className="block text-xs font-medium text-zinc-500 mb-1.5 text-left">
-                            Duration
-                          </label>
-                          <div className="flex gap-1">
-                            {['6', '10'].map((d) => (
-                              <button
-                                key={d}
-                                onClick={() => setGrokDuration(d as '6' | '10')}
-                                className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors border ${
-                                  grokDuration === d
-                                    ? 'bg-amber-500/10 border-amber-500 text-amber-500'
-                                    : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                                }`}
-                              >
-                                {d}s
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-zinc-500 mb-1.5 text-left">
-                            Mode
-                          </label>
-                          <div className="flex gap-1">
-                            {['normal', 'fun'].map((m) => (
-                              <button
-                                key={m}
-                                onClick={() => setGrokMode(m as 'normal' | 'fun')}
-                                className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors border ${
-                                  grokMode === m
-                                    ? 'bg-amber-500/10 border-amber-500 text-amber-500'
-                                    : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                                }`}
-                              >
-                                {m.charAt(0).toUpperCase() + m.slice(1)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <label className="block text-sm font-medium text-zinc-400 mb-2 text-left">
-                      Video Prompt
-                    </label>
-                    <textarea
-                      value={videoPrompt}
-                      onChange={(e) => setVideoPrompt(e.target.value)}
-                      placeholder="Describe how you want to animate the image..."
-                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm text-white placeholder-zinc-600 focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 outline-none resize-none h-24"
+                    <VideoSettings
+                      values={videoSettings}
+                      onChange={(updates) => setVideoSettings(prev => ({ ...prev, ...updates }))}
+                      accentColor="amber"
                     />
                   </div>
 
@@ -630,7 +582,7 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
                     </span>
                   </button>
                   <p className="mt-4 text-xs text-zinc-500">
-                    {selectedModel === 'seedance' ? 'Uses Kling AI Video Model' : 'Uses Grok Imagine Video Model'}
+                    {videoSettings.model === 'seedance' ? 'Uses Kling AI Video Model' : 'Uses Grok Imagine Video Model'}
                   </p>
                 </div>
               ) : (
@@ -669,85 +621,11 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
                         exit={{ opacity: 0, y: 20 }}
                         className="absolute bottom-20 left-1/2 -translate-x-1/2 w-full max-w-md bg-zinc-900/95 backdrop-blur-xl border border-zinc-700/50 rounded-2xl p-5 space-y-4 shadow-2xl z-20"
                       >
-                        {/* Model Selector */}
-                        <div>
-                          <label className="block text-xs font-medium text-zinc-400 mb-2">Model</label>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setSelectedModel('seedance')}
-                              className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
-                                selectedModel === 'seedance'
-                                  ? 'bg-amber-500/10 border-amber-500 text-amber-500'
-                                  : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700'
-                              }`}
-                            >
-                              Seedream
-                            </button>
-                            <button
-                              onClick={() => setSelectedModel('grok')}
-                              className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
-                                selectedModel === 'grok'
-                                  ? 'bg-amber-500/10 border-amber-500 text-amber-500'
-                                  : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700'
-                              }`}
-                            >
-                              Grok
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Grok-specific options */}
-                        {selectedModel === 'grok' && (
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-xs font-medium text-zinc-500 mb-1.5">Duration</label>
-                              <div className="flex gap-1">
-                                {(['6', '10'] as const).map((d) => (
-                                  <button
-                                    key={d}
-                                    onClick={() => setGrokDuration(d as '6' | '10')}
-                                    className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors border ${
-                                      grokDuration === d
-                                        ? 'bg-amber-500/10 border-amber-500 text-amber-500'
-                                        : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700'
-                                    }`}
-                                  >
-                                    {d}s
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-zinc-500 mb-1.5">Mode</label>
-                              <div className="flex gap-1">
-                                {(['normal', 'fun'] as const).map((m) => (
-                                  <button
-                                    key={m}
-                                    onClick={() => setGrokMode(m as 'normal' | 'fun')}
-                                    className={`flex-1 py-1.5 px-2 rounded-md text-xs font-medium transition-colors border ${
-                                      grokMode === m
-                                        ? 'bg-amber-500/10 border-amber-500 text-amber-500'
-                                        : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700'
-                                    }`}
-                                  >
-                                    {m.charAt(0).toUpperCase() + m.slice(1)}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Video Prompt */}
-                        <div>
-                          <label className="block text-xs font-medium text-zinc-400 mb-2">Prompt</label>
-                          <textarea
-                            value={videoPrompt}
-                            onChange={(e) => setVideoPrompt(e.target.value)}
-                            placeholder="Describe how you want to animate the image..."
-                            className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-3 text-sm text-white placeholder-zinc-600 focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 outline-none resize-none h-20"
-                          />
-                        </div>
+                        <VideoSettings
+                          values={videoSettings}
+                          onChange={(updates) => setVideoSettings(prev => ({ ...prev, ...updates }))}
+                          accentColor="amber"
+                        />
 
                         {/* Actions */}
                         <div className="flex gap-2">
@@ -798,15 +676,7 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
             ) : activeTool === 'nano' ? (
               // NANO EDIT TOOL UI
               localIsGenerating ? (
-                 <div className="text-center px-4">
-                  <div className="group relative inline-flex h-12 overflow-hidden rounded-full p-[1px]">
-                    <span className="absolute inset-[-1000%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2E8F0_0%,#8b5cf6_50%,#E2E8F0_100%)]" />
-                    <span className="inline-flex h-full w-full items-center justify-center rounded-full bg-slate-950 px-8 py-1 text-sm font-medium text-white backdrop-blur-3xl">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Starting Edit...
-                    </span>
-                  </div>
-                </div>
+                <AnimatedSpinner label="Starting Edit..." color="violet" />
               ) : (
                 <div className="text-center px-4 w-full max-w-md">
                   <div className="mb-6">
@@ -838,16 +708,11 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
             ) : (
               // CHARACTER SWAP TOOL UI
               localIsGenerating ? (
-                <div className="text-center px-4">
-                  <div className="group relative inline-flex h-12 overflow-hidden rounded-full p-[1px]">
-                    <span className="absolute inset-[-1000%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2E8F0_0%,#f97316_50%,#E2E8F0_100%)]" />
-                    <span className="inline-flex h-full w-full items-center justify-center rounded-full bg-slate-950 px-8 py-1 text-sm font-medium text-white backdrop-blur-3xl">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Swapping Characters...
-                    </span>
-                  </div>
-                  <p className="mt-4 text-xs text-zinc-500">Result will appear in the main grid when done.</p>
-                </div>
+                <AnimatedSpinner
+                  label="Swapping Characters..."
+                  subtitle="Result will appear in the main grid when done."
+                  color="orange"
+                />
               ) : (
                 <div className="px-6 w-full max-w-lg overflow-y-auto max-h-[calc(100vh-80px)] py-6 space-y-6">
                   {/* Swap Model Selector */}

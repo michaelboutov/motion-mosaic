@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAppStore, Image } from '@/lib/store'
 import { startPolling } from '@/lib/usePoll'
 import { useToast } from '@/components/Toast'
+import { refreshTaskImages, extractTaskId } from '@/lib/refreshTaskImages'
 
 /**
  * All Architect business logic extracted from ViralArchitect.tsx:
@@ -60,11 +61,7 @@ export function useArchitectActions() {
       const seen = new Set<string>()
       for (const img of scene.images) {
         if (img.status !== 'done') continue
-        let taskId = img.taskId
-        if (!taskId) {
-          const parts = img.id.split('-')
-          if (parts.length >= 3) taskId = parts.slice(1, -1).join('-')
-        }
+        const taskId = extractTaskId(img)
         if (!taskId || seen.has(taskId)) continue
         seen.add(taskId)
         allTasks.push({
@@ -82,37 +79,21 @@ export function useArchitectActions() {
       const batch = allTasks.slice(i, i + batchSize)
       const results = await Promise.allSettled(
         batch.map(async (task) => {
-          const endpoint = task.isMidjourney
-            ? '/api/generate-batch/callback'
-            : '/api/nano-callback'
-          const res = await fetch(`${endpoint}?taskId=${task.taskId}`, {
-            headers: { Authorization: `Bearer ${kieApiKey}` },
-          })
-          const data = await res.json()
-          console.log(`[Refresh] Task ${task.taskId}: status=${data.status}`)
+          const currentScene = useAppStore
+            .getState()
+            .architect.scenes.find((s) => s.id === task.sceneId)
+          if (!currentScene) return false
 
-          if (data.status === 'success') {
-            const urls = task.isMidjourney ? data.resultUrls : data.imageUrls
-            if (urls && urls.length > 0) {
-              const currentScene = useAppStore
-                .getState()
-                .architect.scenes.find((s) => s.id === task.sceneId)
-              if (currentScene) {
-                const prefix = task.isMidjourney
-                  ? `mj-${task.taskId}-`
-                  : `nano-${task.taskId}-`
-                const updatedImages = currentScene.images.map((img) => {
-                  if (!img.id.startsWith(prefix)) return img
-                  const idx = parseInt(img.id.split('-').pop() || '')
-                  if (isNaN(idx) || idx < 0 || idx >= urls.length) return img
-                  const newUrl =
-                    typeof urls[idx] === 'string' ? urls[idx] : urls[idx].resultUrl
-                  return newUrl ? { ...img, url: newUrl, taskId: task.taskId } : img
-                })
-                updateScene(task.sceneId, { images: updatedImages })
-                return true
-              }
-            }
+          const result = await refreshTaskImages({
+            taskId: task.taskId,
+            isMidjourney: task.isMidjourney,
+            images: currentScene.images,
+            apiKey: kieApiKey!,
+          })
+
+          if (result.success && result.updatedImages) {
+            updateScene(task.sceneId, { images: result.updatedImages })
+            return true
           }
           return false
         })
@@ -599,14 +580,7 @@ export function useArchitectActions() {
     imageId: string,
     storedTaskId: string | undefined
   ) => {
-    let taskId = storedTaskId
-    if (!taskId) {
-      const parts = imageId.split('-')
-      if (parts.length >= 3) {
-        taskId = parts.slice(1, -1).join('-')
-      }
-    }
-
+    const taskId = extractTaskId({ id: imageId, taskId: storedTaskId })
     if (!kieApiKey || !taskId) return
 
     const refreshKey = `${sceneId}-${taskId}`
@@ -614,38 +588,20 @@ export function useArchitectActions() {
     refreshingTasksRef.current.add(refreshKey)
 
     try {
-      const isMidjourney = imageId.startsWith('mj-')
-      const endpoint = isMidjourney
-        ? '/api/generate-batch/callback'
-        : '/api/nano-callback'
+      const currentScene = useAppStore
+        .getState()
+        .architect.scenes.find((s) => s.id === sceneId)
+      if (!currentScene) return
 
-      const res = await fetch(`${endpoint}?taskId=${taskId}`, {
-        headers: { Authorization: `Bearer ${kieApiKey}` },
+      const result = await refreshTaskImages({
+        taskId,
+        isMidjourney: imageId.startsWith('mj-'),
+        images: currentScene.images,
+        apiKey: kieApiKey,
       })
-      const data = await res.json()
 
-      if (data.status === 'success') {
-        const urls = isMidjourney ? data.resultUrls : data.imageUrls
-        if (urls && urls.length > 0) {
-          const currentScene = useAppStore
-            .getState()
-            .architect.scenes.find((s) => s.id === sceneId)
-          if (currentScene) {
-            const prefix = isMidjourney
-              ? `mj-${taskId}-`
-              : `nano-${taskId}-`
-            const updatedImages = currentScene.images.map((img) => {
-              if (!img.id.startsWith(prefix)) return img
-              const idParts = img.id.split('-')
-              const idx = parseInt(idParts[idParts.length - 1])
-              if (isNaN(idx) || idx < 0 || idx >= urls.length) return img
-              const newUrl =
-                typeof urls[idx] === 'string' ? urls[idx] : urls[idx].resultUrl
-              return newUrl ? { ...img, url: newUrl, taskId } : img
-            })
-            updateScene(sceneId, { images: updatedImages })
-          }
-        }
+      if (result.success && result.updatedImages) {
+        updateScene(sceneId, { images: result.updatedImages })
       }
     } catch (error) {
       console.error(`Failed to refresh task ${taskId}:`, error)

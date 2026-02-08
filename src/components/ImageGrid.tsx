@@ -5,6 +5,7 @@ import { useAppStore, Image } from '@/lib/store'
 import { Download, Eye, RefreshCw, CheckSquare, Square, Trash2, X } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { downloadFile } from '@/lib/utils'
+import { refreshTaskImages, extractTaskId } from '@/lib/refreshTaskImages'
 
 interface ImageGridProps {
   onImageClick: (image: any) => void
@@ -59,31 +60,24 @@ export default function ImageGrid({ onImageClick }: ImageGridProps) {
   }
 
   const handleImageError = async (image: Image) => {
-    if (!kieApiKey || !image.taskId || refreshingImages.has(image.id)) return
+    const taskId = extractTaskId(image)
+    if (!kieApiKey || !taskId || refreshingImages.has(image.id)) return
     
     console.log(`Image ${image.id} failed to load, attempting to refresh...`)
     setRefreshingImages(prev => new Set(prev).add(image.id))
     
     try {
-      const isMidjourney = image.id.startsWith('mj-')
-      const endpoint = isMidjourney ? '/api/generate-batch/callback' : '/api/nano-callback'
-      
-      const res = await fetch(`${endpoint}?taskId=${image.taskId}`, {
-        headers: { 'Authorization': `Bearer ${kieApiKey}` }
+      const result = await refreshTaskImages({
+        taskId,
+        isMidjourney: image.id.startsWith('mj-'),
+        images: [image],
+        apiKey: kieApiKey,
       })
-      const data = await res.json()
-      
-      if (data.status === 'success') {
-        const urls = isMidjourney ? data.resultUrls : data.imageUrls
-        if (urls && urls.length > 0) {
-          // Find the index of this image based on its ID suffix
-          const idParts = image.id.split('-')
-          const idx = parseInt(idParts[idParts.length - 1]) || 0
-          
-          if (idx < urls.length) {
-            updateImage(image.id, { url: urls[idx] })
-            console.log(`Image ${image.id} URL refreshed successfully`)
-          }
+      if (result.success && result.updatedImages) {
+        const updated = result.updatedImages.find(i => i.id === image.id)
+        if (updated) {
+          updateImage(image.id, { url: updated.url, taskId: updated.taskId })
+          console.log(`Image ${image.id} URL refreshed successfully`)
         }
       }
     } catch (error) {
