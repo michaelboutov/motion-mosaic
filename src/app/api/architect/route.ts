@@ -131,75 +131,102 @@ export async function POST(request: NextRequest) {
     let content = '';
 
     if (provider === 'google') {
-      const ai = new GoogleGenAI({
-        apiKey: apiKey,
-      });
-      
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash', 
-        config: {
-            systemInstruction: {
-                parts: [{ text: dynamicPrompt }]
-            },
-            responseMimeType: 'application/json',
-        },
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: `Topic: ${topic}. Target Video Length: ${scriptLength} seconds.`,
+      try {
+        const ai = new GoogleGenAI({
+          apiKey: apiKey,
+        });
+        
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.0-flash', 
+          config: {
+              systemInstruction: {
+                  parts: [{ text: dynamicPrompt }]
               },
-            ],
+              responseMimeType: 'application/json',
           },
-        ],
-      });
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `Topic: ${topic}. Target Video Length: ${scriptLength} seconds.`,
+                },
+              ],
+            },
+          ],
+        });
 
-      // Handle response
-      // Check if response has candidates
-      if (response.candidates && response.candidates.length > 0) {
-          const candidate = response.candidates[0];
-          if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
-              content = candidate.content.parts[0].text || '';
-          }
-      }
-      
-      if (!content) {
-          throw new Error('No content generated from Google API');
+        // Handle response
+        if (response.candidates && response.candidates.length > 0) {
+            const candidate = response.candidates[0];
+            if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+                content = candidate.content.parts[0].text || '';
+            }
+        }
+        
+        if (!content) {
+            throw new Error('No content generated from Google API');
+        }
+      } catch (googleError) {
+        console.error('Google API Error:', googleError);
+        return NextResponse.json({ 
+          error: `Google API Error: ${googleError instanceof Error ? googleError.message : 'Unknown error'}`,
+        }, { status: 502 });
       }
 
     } else {
       // Kie.ai implementation - Model in URL as per documentation
-      console.log('Using Kie.ai with model', kieModel)
-      const response = await fetch(`https://api.kie.ai/${kieModel}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: 'system',
-              content: dynamicPrompt
-            },
-            {
-              role: 'user',
-              content: `Topic: ${topic}. Target Video Length: ${scriptLength} seconds.`
-            }
-          ],
-          stream: false,
-          temperature: 0.7
-        })
-      })
+      try {
+        console.log('Using Kie.ai with model', kieModel)
+        
+        // Set a timeout for the fetch request (8 seconds to stay under Netlify's 10s limit)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        
+        const response = await fetch(`https://api.kie.ai/${kieModel}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            messages: [
+              {
+                role: 'system',
+                content: dynamicPrompt
+              },
+              {
+                role: 'user',
+                content: `Topic: ${topic}. Target Video Length: ${scriptLength} seconds.`
+              }
+            ],
+            stream: false,
+            temperature: 0.7
+          }),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorData = await response.text()
-        console.error('Gemini API Error:', errorData)
-        throw new Error(`Gemini API error: ${response.status}`)
+        const errorData = await response.text().catch(() => 'Unable to read error response')
+        console.error('Kie.ai API Error:', errorData)
+        return NextResponse.json({ 
+          error: `Kie.ai API error: ${response.status} - ${errorData.substring(0, 200)}`,
+        }, { status: 502 })
       }
 
-      const result = await response.json()
+      const result = await response.json().catch((e) => {
+        console.error('Failed to parse Kie.ai response:', e)
+        return null
+      })
+      
+      if (!result) {
+        return NextResponse.json({ 
+          error: 'Failed to parse Kie.ai response as JSON',
+        }, { status: 502 })
+      }
+      
       console.log('--- KIE.AI DEBUG START ---')
       console.log('Status:', response.status)
       console.log('Full Response:', JSON.stringify(result, null, 2))
@@ -264,6 +291,18 @@ export async function POST(request: NextRequest) {
           details: result,
           status: response.status,
           keys: Object.keys(result)
+        }, { status: 502 })
+      }
+      
+      } catch (fetchError) {
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          return NextResponse.json({ 
+            error: 'Request timed out. The Kie.ai API took too long to respond.',
+          }, { status: 504 })
+        }
+        console.error('Kie.ai Fetch Error:', fetchError)
+        return NextResponse.json({ 
+          error: `Failed to connect to Kie.ai API: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`,
         }, { status: 502 })
       }
     }
