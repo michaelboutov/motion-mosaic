@@ -372,6 +372,7 @@ export default function DirectorChat({ viewMode }: { viewMode: 'mosaic' | 'archi
           context,
           apiKey,
           provider: store.provider,
+          kieModel: store.kieModel,
         }),
       })
 

@@ -3,9 +3,9 @@
 import { motion } from 'framer-motion'
 import { useAppStore, Image } from '@/lib/store'
 import { Download, Eye, RefreshCw, CheckSquare, Square, Trash2, X } from 'lucide-react'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { downloadFile } from '@/lib/utils'
-import { refreshTaskImages, extractTaskId } from '@/lib/refreshTaskImages'
+import { startPolling } from '@/lib/usePoll'
 
 interface ImageGridProps {
   onImageClick: (image: any) => void
@@ -59,34 +59,114 @@ export default function ImageGrid({ onImageClick }: ImageGridProps) {
     setSelectedIds(new Set())
   }
 
-  const handleImageError = async (image: Image) => {
-    const taskId = extractTaskId(image)
-    if (!kieApiKey || !taskId || refreshingImages.has(image.id)) return
-    
-    console.log(`Image ${image.id} failed to load, attempting to refresh...`)
-    setRefreshingImages(prev => new Set(prev).add(image.id))
-    
-    try {
-      const result = await refreshTaskImages({
-        taskId,
-        isMidjourney: image.id.startsWith('mj-'),
-        images: [image],
-        apiKey: kieApiKey,
-      })
-      if (result.success && result.updatedImages) {
-        const updated = result.updatedImages.find(i => i.id === image.id)
-        if (updated) {
-          updateImage(image.id, { url: updated.url, taskId: updated.taskId })
-          console.log(`Image ${image.id} URL refreshed successfully`)
+  const retryingRef = useRef(new Set<string>())
+
+  const handleRetryGenerate = async (clickedImage: Image) => {
+    if (!kieApiKey || refreshingImages.has(clickedImage.id)) return
+    if (retryingRef.current.has(clickedImage.id)) return
+
+    const prompt = clickedImage.prompt
+    if (!prompt) return
+
+    // Find up to 4 consecutive error images starting from the clicked one
+    const clickedIdx = images.findIndex(i => i.id === clickedImage.id)
+    if (clickedIdx === -1) return
+
+    const errorSlots: { id: string; index: number }[] = []
+    // Collect clicked + next error images up to 4
+    for (let i = clickedIdx; i < images.length && errorSlots.length < 4; i++) {
+      if (images[i].status === 'error') {
+        errorSlots.push({ id: images[i].id, index: i })
+      } else {
+        break
+      }
+    }
+    // If we didn't get 4, also look backwards
+    if (errorSlots.length < 4) {
+      for (let i = clickedIdx - 1; i >= 0 && errorSlots.length < 4; i--) {
+        if (images[i].status === 'error') {
+          errorSlots.unshift({ id: images[i].id, index: i })
+        } else {
+          break
         }
       }
+    }
+
+    // Mark all slots as loading
+    const slotIds = errorSlots.map(s => s.id)
+    slotIds.forEach(id => retryingRef.current.add(id))
+    setRefreshingImages(prev => {
+      const next = new Set(prev)
+      slotIds.forEach(id => next.add(id))
+      return next
+    })
+    slotIds.forEach(id => updateImage(id, { status: 'loading' }))
+
+    try {
+      // Send 1 batch to Midjourney (returns 4 images)
+      const res = await fetch('/api/generate-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, apiKey: kieApiKey, batchCount: 1 }),
+      })
+      const data = await res.json()
+
+      if (!data.success || !data.tasks?.length) {
+        // Mark all slots back to error
+        slotIds.forEach(id => updateImage(id, { status: 'error' }))
+        return
+      }
+
+      const task = data.tasks[0]
+
+      // Poll for results
+      startPolling({
+        intervalMs: 2000,
+        maxAttempts: 150,
+        onTimeout: () => {
+          slotIds.forEach(id => updateImage(id, { status: 'error' }))
+        },
+        checkFn: async () => {
+          try {
+            const pollRes = await fetch(`/api/generate-batch/callback?taskId=${task.taskId}`, {
+              headers: { Authorization: `Bearer ${kieApiKey}` },
+              cache: 'no-store',
+            })
+            const pollData = await pollRes.json()
+
+            if (pollData.status === 'success' && pollData.resultUrls?.length) {
+              // Update each slot with the new image
+              pollData.resultUrls.forEach((url: string, idx: number) => {
+                if (idx < slotIds.length) {
+                  updateImage(slotIds[idx], {
+                    id: `mj-${task.taskId}-${idx}`,
+                    url,
+                    status: 'done',
+                    prompt,
+                    taskId: task.taskId,
+                  })
+                }
+              })
+              return 'done'
+            } else if (pollData.status === 'fail') {
+              slotIds.forEach(id => updateImage(id, { status: 'error' }))
+              return 'done'
+            }
+            return 'continue'
+          } catch {
+            return 'continue'
+          }
+        },
+      })
     } catch (error) {
-      console.error(`Failed to refresh image ${image.id}:`, error)
+      console.error('Retry generate failed:', error)
+      slotIds.forEach(id => updateImage(id, { status: 'error' }))
     } finally {
+      slotIds.forEach(id => retryingRef.current.delete(id))
       setRefreshingImages(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(image.id)
-        return newSet
+        const next = new Set(prev)
+        slotIds.forEach(id => next.delete(id))
+        return next
       })
     }
   }
@@ -217,12 +297,12 @@ export default function ImageGrid({ onImageClick }: ImageGridProps) {
             </div>
           ) : image.status === 'error' ? (
             <button
-              onClick={() => handleImageError(image)}
+              onClick={() => handleRetryGenerate(image)}
               className="w-full h-full bg-zinc-800 rounded-lg flex flex-col items-center justify-center gap-2 group/retry hover:bg-zinc-750 transition-colors"
             >
               <RefreshCw className={`w-5 h-5 text-zinc-600 group-hover/retry:text-amber-400 transition-colors ${refreshingImages.has(image.id) ? 'animate-spin' : ''}`} />
               <div className="text-zinc-600 group-hover/retry:text-zinc-400 text-xs text-center px-2 transition-colors">
-                {refreshingImages.has(image.id) ? 'Retrying...' : 'Tap to retry'}
+                {refreshingImages.has(image.id) ? 'Regenerating...' : 'Tap to retry'}
               </div>
             </button>
           ) : (
@@ -232,7 +312,7 @@ export default function ImageGrid({ onImageClick }: ImageGridProps) {
                 loading="lazy"
                 className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 ${refreshingImages.has(image.id) ? 'opacity-50' : ''}`}
                 alt={image.prompt || 'Generated image'}
-                onError={() => handleImageError(image)}
+                onError={() => handleRetryGenerate(image)}
               />
               
               {/* Hover Overlay - Desktop Only */}

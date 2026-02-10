@@ -58,7 +58,7 @@ export default function SceneRow({
   onImageClick,
   onImageError,
 }: SceneRowProps) {
-  const { updateScene, kieApiKey, googleApiKey, provider } = useAppStore()
+  const { updateScene, kieApiKey, googleApiKey, provider, kieModel } = useAppStore()
   const [isEnhancing, setIsEnhancing] = useState(false)
 
   const handleEnhancePrompt = async () => {
@@ -70,7 +70,7 @@ export default function SceneRow({
       const res = await fetch('/api/enhance-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: scene.prompt, apiKey, provider }),
+        body: JSON.stringify({ prompt: scene.prompt, apiKey, provider, kieModel }),
       })
       const data = await res.json()
       if (data.enhanced) {

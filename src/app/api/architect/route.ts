@@ -5,6 +5,7 @@ interface ArchitectRequest {
   topic: string
   apiKey: string
   provider?: 'kie' | 'google'
+  kieModel?: string
   scriptLength?: number
 }
 
@@ -17,7 +18,7 @@ You are the **Viral AI Video Architect**. Your goal is to engineer high-retentio
 ### **A. Midjourney v7 (PRIMARY TOOL)**
 *   **Usage:** Generates **80-90%** of the scenes. We want fresh, exciting visuals for the montage.
 *   **MANDATORY STYLE:** You **MUST** append this string to the end of EVERY Midjourney prompt:
-    > \`35mm film photography, slightly grainy texture, Kodak Portra 400 aesthetic, candid moment --style raw --v 7\` 
+    > \`35mm film photography, slightly grainy texture, Kodak Portra 400 aesthetic, candid moment --style raw\` 
 
 ### **B. Nano Banana Pro (SECONDARY TOOL)**
 *   **Usage:** Used **sparingly (2-3 times max)** per video.
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Empty request body' }, { status: 400 })
     }
 
-    const { topic, apiKey, provider = 'kie', scriptLength = 60 } = body
+    const { topic, apiKey, provider = 'kie', kieModel = 'gemini-3-flash', scriptLength = 60 } = body
 
     if (!topic || !apiKey) {
       return NextResponse.json(
@@ -169,8 +170,8 @@ export async function POST(request: NextRequest) {
 
     } else {
       // Kie.ai implementation - Model in URL as per documentation
-      console.log('Using Kie.ai with model gemini-3-flash')
-      const response = await fetch('https://api.kie.ai/gemini-3-flash/v1/chat/completions', {
+      console.log('Using Kie.ai with model', kieModel)
+      const response = await fetch(`https://api.kie.ai/${kieModel}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -214,7 +215,6 @@ export async function POST(request: NextRequest) {
       }
 
       // Ultra-robust response parsing for Kie.ai and similar proxies
-      let content = ''
       
       const findContent = (obj: any): string | null => {
         if (!obj) return null;

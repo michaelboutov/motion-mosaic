@@ -13,7 +13,7 @@ Rules:
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, apiKey, provider = 'kie' } = await request.json()
+    const { prompt, apiKey, provider = 'kie', kieModel = 'gemini-3-flash' } = await request.json()
 
     if (!prompt || !apiKey) {
       return NextResponse.json({ error: 'Prompt and API key required' }, { status: 400 })
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         enhanced = response.candidates[0].content.parts[0].text
       }
     } else {
-      const response = await fetch('https://api.kie.ai/gemini-3-flash/v1/chat/completions', {
+      const response = await fetch(`https://api.kie.ai/${kieModel}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

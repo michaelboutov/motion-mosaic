@@ -18,6 +18,7 @@ export function useArchitectActions() {
     kieApiKey,
     googleApiKey,
     provider,
+    kieModel,
     architect,
     setArchitectState,
     updateScene,
@@ -35,6 +36,7 @@ export function useArchitectActions() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [refreshResult, setRefreshResult] = useState<string | null>(null)
   const hasRefreshedRef = useRef(false)
+  const hasResumedVideoPollingRef = useRef(false)
   // Use a ref instead of (window as any).__refreshingTasks
   const refreshingTasksRef = useRef(new Set<string>())
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null)
@@ -126,6 +128,21 @@ export function useArchitectActions() {
     refreshAllImageUrls()
   }, [kieApiKey, architect.scenes.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Resume polling for scene videos that were generating before refresh ──
+  useEffect(() => {
+    if (hasResumedVideoPollingRef.current) return
+    if (!kieApiKey || architect.scenes.length === 0) return
+    const generatingScenes = architect.scenes.filter(
+      (s) => s.video?.status === 'generating' && s.video?.taskId
+    )
+    if (generatingScenes.length === 0) return
+    hasResumedVideoPollingRef.current = true
+    console.log(`[Resume] Resuming polling for ${generatingScenes.length} scene video(s)`)
+    for (const scene of generatingScenes) {
+      pollSceneVideo(scene.id, scene.video!.taskId!)
+    }
+  }, [kieApiKey, architect.scenes.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Design (generate strategy + script + scenes) ───────────────────
   const handleDesign = async () => {
     const activeKey = provider === 'google' ? googleApiKey : kieApiKey
@@ -138,7 +155,7 @@ export function useArchitectActions() {
       const response = await fetch('/api/architect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, apiKey: activeKey, provider, scriptLength }),
+        body: JSON.stringify({ topic, apiKey: activeKey, provider, kieModel, scriptLength }),
       })
 
       const data = await response.json()

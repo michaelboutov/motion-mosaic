@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore, Image } from '@/lib/store'
-import { X, Download, Share, Sparkles, Wand2, Users, Plus, Link2, ImageIcon, ChevronDown, ChevronLeft, ChevronRight, SplitSquareHorizontal } from 'lucide-react'
+import { X, Download, Share, Sparkles, Wand2, Users, Plus, Link2, ImageIcon, ChevronDown, ChevronLeft, ChevronRight, SplitSquareHorizontal, Clapperboard } from 'lucide-react'
 import ComparisonSlider from '@/components/ComparisonSlider'
 import { downloadFile } from '@/lib/utils'
 import { useToast } from '@/components/Toast'
 import VideoSettings, { VideoSettingsValues } from '@/components/VideoSettings'
 import AnimatedSpinner from '@/components/AnimatedSpinner'
+import { useEditorStore } from '@/lib/editorStore'
+import { probeVideoDuration } from '@/lib/probeVideoDuration'
 
 interface MotionStudioProps {
   isOpen: boolean
@@ -655,6 +657,23 @@ export default function MotionStudio({ isOpen, onClose, selectedImage, onNavigat
                     >
                       <Download className="w-4 h-4 mr-2" />
                       Save Video
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const dur = await probeVideoDuration(videoUrl!)
+                        useEditorStore.getState().addVideosToEditor([{
+                          url: videoUrl!,
+                          thumbnailUrl: selectedImage.url,
+                          label: selectedImage.prompt || `Scene ${selectedImage.id}`,
+                          duration: dur,
+                        }])
+                        toast({ title: 'Added to Editor', description: 'Video sent to the timeline editor.', variant: 'success' })
+                        window.location.href = '/editor'
+                      }}
+                      className="bg-gradient-to-r from-amber-500 to-orange-500 text-black px-6 py-2 rounded-full font-medium hover:from-amber-400 hover:to-orange-400 flex items-center shadow-lg shadow-amber-500/20"
+                    >
+                      <Clapperboard className="w-4 h-4 mr-2" />
+                      Send to Editor
                     </button>
                     <button 
                       onClick={() => setShowRegenSettings(!showRegenSettings)}

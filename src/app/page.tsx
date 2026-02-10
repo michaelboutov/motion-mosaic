@@ -13,7 +13,7 @@ import MotionStudio from '@/components/MotionStudio'
 import ParticleBubble from '@/components/ParticleBubble'
 import ViralArchitect from '@/components/ViralArchitect'
 import DirectorChat from '@/components/DirectorChat'
-import { LayoutGrid, Clapperboard, Settings, MessageCircle } from 'lucide-react'
+import { LayoutGrid, Clapperboard, Settings, MessageCircle, MonitorPlay, ExternalLink } from 'lucide-react'
 
 export default function Home() {
   const { 
@@ -212,6 +212,18 @@ export default function Home() {
         >
           <Clapperboard className="w-4 h-4" />
           Architect
+        </button>
+
+        <div className="w-px h-4 bg-zinc-800 mx-1" />
+
+        <button
+          onClick={() => { window.location.href = '/editor' }}
+          className="px-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2 bg-purple-500/5 text-purple-400 hover:bg-purple-500/15 ring-1 ring-purple-500/20 hover:ring-purple-500/40"
+          title="Open Editor"
+        >
+          <MonitorPlay className="w-4 h-4" />
+          Editor
+          <ExternalLink className="w-3 h-3 opacity-50" />
         </button>
       </div>
 

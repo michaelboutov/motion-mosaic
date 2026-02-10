@@ -13,6 +13,7 @@ export interface AppState {
   kieApiKey: string | null
   googleApiKey: string | null
   provider: 'kie' | 'google'
+  kieModel: string
   prompt: string
   isGeneratingImages: boolean
   images: Image[]
@@ -73,6 +74,7 @@ export interface AppState {
   setKieApiKey: (key: string | null) => void
   setGoogleApiKey: (key: string | null) => void
   setProvider: (provider: 'kie' | 'google') => void
+  setKieModel: (model: string) => void
   setPrompt: (prompt: string) => void
   setIsGeneratingImages: (isGenerating: boolean) => void
   setImages: (images: Image[]) => void
@@ -118,6 +120,7 @@ const initialState = {
   kieApiKey: null,
   googleApiKey: null,
   provider: 'kie' as 'kie' | 'google',
+  kieModel: 'gemini-3-flash',
   prompt: '',
   isGeneratingImages: false,
   images: [],
@@ -148,6 +151,7 @@ export const useAppStore = create<AppState>((set) => ({
   setGoogleApiKey: (key) => set({ googleApiKey: key }),
 
   setProvider: (provider) => set({ provider }),
+  setKieModel: (model) => set({ kieModel: model }),
   
   setPrompt: (prompt) => set({ prompt }),
   
@@ -350,13 +354,15 @@ if (typeof window !== 'undefined') {
             })),
           video: scene.video ? {
             ...scene.video,
-            status: scene.video.status === 'generating' ? 'error' : scene.video.status
+            // Keep 'generating' status if taskId exists so polling can resume
+            status: scene.video.status === 'generating' && scene.video.taskId ? 'generating' : (scene.video.status === 'generating' ? 'error' : scene.video.status)
           } : undefined
         }))
       } : initialState.architect
 
       useAppStore.setState({
         provider: parsed.provider || 'kie',
+        kieModel: parsed.kieModel || 'gemini-3-flash',
         architect: cleanArchitect,
         images: (parsed.images || []).map((img: any) => ({
           ...img,
@@ -368,7 +374,7 @@ if (typeof window !== 'undefined') {
         scriptLength: parsed.scriptLength || 60,
         selectedImageId: parsed.selectedImageId || null,
         isGeneratingImages: false,
-        activeVideoTasks: [],
+        activeVideoTasks: parsed.activeVideoTasks || [],
         activeNanoTasks: []
       })
     } catch (e) {
@@ -380,9 +386,11 @@ if (typeof window !== 'undefined') {
   useAppStore.subscribe((state) => {
     const stateToSave = {
       provider: state.provider,
+      kieModel: state.kieModel,
       architect: state.architect,
       images: state.images,
       generatedVideos: state.generatedVideos,
+      activeVideoTasks: state.activeVideoTasks,
       prompt: state.prompt,
       topic: state.topic,
       scriptLength: state.scriptLength,

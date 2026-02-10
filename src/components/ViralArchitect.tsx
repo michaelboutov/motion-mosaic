@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore, Image, SavedProject } from '@/lib/store'
 import { AnimatePresence } from 'framer-motion'
-import { Sparkles, RefreshCw, Loader2, Clapperboard, Save, FolderOpen, Settings, Play, Download, LayoutList, Film, Info, History } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, Clapperboard, Save, FolderOpen, Settings, Play, Download, LayoutList, Film, Info, History, MonitorPlay } from 'lucide-react'
 import { useStudioHandlers } from '@/lib/useStudioHandlers'
 import { useArchitectActions } from '@/lib/useArchitectActions'
 import MotionStudio from '@/components/MotionStudio'
@@ -17,6 +17,8 @@ import SceneRow from '@/components/architect/SceneRow'
 import DesignProgress from '@/components/architect/DesignProgress'
 import TimelineView from '@/components/architect/TimelineView'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import { useEditorStore } from '@/lib/editorStore'
+import { probeVideoDuration, probeAudioDuration } from '@/lib/probeVideoDuration'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -416,6 +418,43 @@ export default function ViralArchitect() {
                 >
                   <Download className="w-2.5 h-2.5" />
                   Download All
+                </button>
+                <button
+                  onClick={async () => {
+                    const scenes = architect.scenes
+                      .filter(s => s.video?.url && s.video.status === 'done')
+                    if (scenes.length === 0) {
+                      toast({ title: 'No videos ready', description: 'Generate videos for your scenes first.', variant: 'warning' })
+                      return
+                    }
+                    toast({ title: 'Preparing videos...', description: 'Detecting durations', variant: 'default' })
+                    const videos = await Promise.all(
+                      scenes.map(async (s) => ({
+                        url: s.video!.url,
+                        thumbnailUrl: s.images.find(i => i.id === s.selectedImageId)?.url || s.images.find(i => i.status === 'done')?.url,
+                        label: `Scene ${s.id} – ${s.visual.slice(0, 40)}`,
+                        duration: await probeVideoDuration(s.video!.url),
+                      }))
+                    )
+                    const editorStore = useEditorStore.getState()
+                    editorStore.clearEditor()
+                    editorStore.addVideosToEditor(videos)
+                    // Also add voiceover if available
+                    if (architect.script?.voiceoverUrl) {
+                      const voDuration = await probeAudioDuration(architect.script.voiceoverUrl)
+                      editorStore.addAudioToEditor({
+                        url: architect.script.voiceoverUrl,
+                        label: 'Voiceover',
+                        duration: voDuration,
+                      })
+                    }
+                    toast({ title: `${videos.length} video(s) sent to Editor`, variant: 'success' })
+                    window.location.href = '/editor'
+                  }}
+                  className="px-3 py-1.5 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-400 rounded-full text-[10px] font-bold uppercase tracking-widest border border-amber-500/20 transition-all flex items-center gap-2"
+                >
+                  <MonitorPlay className="w-2.5 h-2.5" />
+                  Send to Editor
                 </button>
                 {refreshResult && (
                   <span className="text-[10px] text-zinc-400 animate-in fade-in">{refreshResult}</span>

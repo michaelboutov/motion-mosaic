@@ -86,12 +86,13 @@ interface DirectorChatRequest {
   context: Record<string, any>
   apiKey: string
   provider: 'kie' | 'google'
+  kieModel?: string
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: DirectorChatRequest = await request.json()
-    const { messages, context, apiKey, provider } = body
+    const { messages, context, apiKey, provider, kieModel = 'gemini-3-flash' } = body
 
     if (!apiKey) {
       return NextResponse.json({ error: 'API key is required' }, { status: 400 })
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const response = await fetch('https://api.kie.ai/gemini-3-flash/v1/chat/completions', {
+      const response = await fetch(`https://api.kie.ai/${kieModel}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

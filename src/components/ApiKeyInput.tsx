@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAppStore } from '@/lib/store'
-import { Eye, EyeOff, Key, X, Settings2, ShieldCheck, Zap, Sparkles, Globe, Trash2 } from 'lucide-react'
+import { Eye, EyeOff, Key, X, Settings2, ShieldCheck, Zap, Sparkles, Globe, Trash2, Cpu } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 interface ApiKeyInputProps {
@@ -18,6 +18,8 @@ export default function ApiKeyInput({ isOpen = false, onClose }: ApiKeyInputProp
     setGoogleApiKey, 
     provider, 
     setProvider,
+    kieModel,
+    setKieModel,
     clearPersistence
   } = useAppStore()
   const [showKieKey, setShowKieKey] = useState(false)
@@ -128,6 +130,39 @@ export default function ApiKeyInput({ isOpen = false, onClose }: ApiKeyInputProp
               </button>
             </div>
           </div>
+
+          {/* Kie.ai LLM Model Selector */}
+          {provider === 'kie' && (
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 uppercase tracking-[0.2em] ml-1">
+                <Cpu className="w-3 h-3" /> Kie.ai LLM Model
+              </label>
+              <div className="grid grid-cols-3 gap-2 p-1.5 bg-zinc-900/50 rounded-[1.25rem] border border-zinc-800/50">
+                {[
+                  { id: 'gemini-3-flash', label: 'Gemini 3 Flash', desc: 'Fast & smart' },
+                  { id: 'gemini-2.5-flash-preview', label: 'Gemini 2.5', desc: 'Balanced' },
+                  { id: 'gemini-2.0-flash', label: 'Gemini 2.0', desc: 'Stable' },
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setKieModel(m.id)}
+                    className={`flex flex-col items-center gap-0.5 py-2.5 rounded-xl text-[10px] font-bold transition-all ${
+                      kieModel === m.id
+                        ? 'bg-zinc-800 text-amber-400 shadow-[0_2px_10px_rgba(0,0,0,0.3)] border border-zinc-700'
+                        : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30'
+                    }`}
+                  >
+                    <span className="text-xs">{m.label}</span>
+                    <span className={`text-[9px] ${kieModel === m.id ? 'text-amber-400/60' : 'text-zinc-600'}`}>{m.desc}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-zinc-500 leading-relaxed ml-1">
+                LLM used by Architect, Director AI, and Prompt Enhancer via Kie.ai proxy.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-6">
             {/* Kie.ai Section */}
