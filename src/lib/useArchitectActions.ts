@@ -39,6 +39,7 @@ export function useArchitectActions() {
   const hasResumedVideoPollingRef = useRef(false)
   // Use a ref instead of (window as any).__refreshingTasks
   const refreshingTasksRef = useRef(new Set<string>())
+  const designAbortRef = useRef<AbortController | null>(null)
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null)
 
   // Track unsaved changes by comparing current architect state to last saved snapshot
@@ -151,12 +152,34 @@ export function useArchitectActions() {
     setIsDesigning(true)
     setArchitectState({ isGenerating: true })
 
-    try {
+    // Abort any in-flight design request before starting a new one
+    if (designAbortRef.current) {
+      designAbortRef.current.abort()
+    }
+    const abortController = new AbortController()
+    designAbortRef.current = abortController
+
+    // Reset architect state for a fresh generation
+    setArchitectState({ strategy: null, script: null, scenes: [], isGenerating: true })
+
+    const attemptFetch = async (attempt: number): Promise<Response> => {
       const response = await fetch('/api/architect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic, apiKey: activeKey, provider, kieModel, scriptLength }),
+        signal: abortController.signal,
       })
+
+      // Retry once on 504 (edge function timeout) or 502
+      if ((response.status === 504 || response.status === 502) && attempt < 1) {
+        console.warn(`Architect API returned ${response.status}, retrying (attempt ${attempt + 1})...`)
+        return attemptFetch(attempt + 1)
+      }
+      return response
+    }
+
+    try {
+      const response = await attemptFetch(0)
 
       // Handle non-JSON responses (e.g. Netlify timeout HTML pages)
       const contentType = response.headers.get('content-type') || ''
