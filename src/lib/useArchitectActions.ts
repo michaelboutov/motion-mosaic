@@ -158,6 +158,16 @@ export function useArchitectActions() {
         body: JSON.stringify({ topic, apiKey: activeKey, provider, kieModel, scriptLength }),
       })
 
+      // Handle non-JSON responses (e.g. Netlify timeout HTML pages)
+      const contentType = response.headers.get('content-type') || ''
+      if (!contentType.includes('application/json')) {
+        throw new Error(
+          response.status === 504
+            ? 'Request timed out. The AI took too long to respond. Try a shorter script length.'
+            : `Server error (${response.status}). Please try again.`
+        )
+      }
+
       const data = await response.json()
 
       if (data.error) {
