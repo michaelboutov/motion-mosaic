@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleGenAI } from '@google/genai'
 
 interface ArchitectRequest {
   topic: string
@@ -132,6 +131,7 @@ export async function POST(request: NextRequest) {
 
     if (provider === 'google') {
       try {
+        const { GoogleGenAI } = await import('@google/genai')
         const ai = new GoogleGenAI({
           apiKey: apiKey,
         });
@@ -179,9 +179,9 @@ export async function POST(request: NextRequest) {
       try {
         console.log('Using Kie.ai with model', kieModel)
         
-        // Set a timeout for the fetch request (8 seconds to stay under Netlify's 10s limit)
+        // Set a timeout for the fetch request (55 seconds)
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const timeoutId = setTimeout(() => controller.abort(), 55000);
         
         const response = await fetch(`https://api.kie.ai/${kieModel}/v1/chat/completions`, {
           method: 'POST',
