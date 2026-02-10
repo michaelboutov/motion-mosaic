@@ -51,6 +51,15 @@ MotionMosaic is a full-stack creative studio that turns text prompts into produc
 - **Topic History Search** — Filter input at the top of the Viral Architect topic history dropdown for quick lookup.
 - **Retry Failed Images** — Failed image tiles show a "Tap to retry" button that re-polls the API instead of being dead-ends.
 
+### Video Editor
+- **Timeline Interface** — Visual timeline with drag-and-drop clip arrangement, trimming, and splitting.
+- **Media Import** — Import videos and images with automatic duration probing and caching.
+- **Waveform Visualization** — Audio waveform display for precise audio editing.
+- **Clip Inspector** — Adjust clip properties, timing, and effects.
+- **Export Pipeline** — Render and export finished projects with customizable settings.
+- **Context Menu** — Right-click context menus for quick clip operations.
+- **Toast Notifications** — Non-intrusive feedback for all user actions.
+
 ### Project Management
 - **Project Library** — Save, load, and manage multiple projects with persistent local storage.
 - **Auto-Save** — Projects are preserved across sessions via Zustand persistence.
@@ -112,15 +121,18 @@ src/
 │   ├── api/
 │   │   ├── architect/              # Viral Architect AI strategy endpoint
 │   │   ├── director-chat/          # AI Director chat endpoint
+│   │   ├── enhance-prompt/         # AI prompt enhancement endpoint
 │   │   ├── generate-batch/         # Batch image generation + callback
 │   │   ├── generate-images/        # Single image generation
 │   │   ├── generate-nano/          # Nano Banana Pro editing
 │   │   ├── generate-video/         # Image-to-video generation
 │   │   ├── generate-voiceover/     # AI voiceover generation
+│   │   ├── media-proxy/            # Secure external media proxy
 │   │   ├── upscale-video/          # Video upscaling
 │   │   ├── midjourney-callback/    # Midjourney polling endpoint
 │   │   ├── nano-callback/          # Nano task polling endpoint
 │   │   └── video-callback/         # Video task polling endpoint
+│   ├── editor/                     # Video editor page
 │   ├── page.tsx                    # Main app (Mosaic + Architect tabs)
 │   ├── layout.tsx                  # Root layout
 │   └── globals.css                 # Global styles
@@ -137,20 +149,35 @@ src/
 │   ├── PromptInput.tsx             # Prompt + generation controls
 │   ├── Toast.tsx                   # Toast notification system
 │   ├── VideoSettings.tsx           # Video model & options panel
-│   └── architect/
-│       ├── SceneRow.tsx            # Individual scene controls
-│       ├── ScriptCard.tsx          # Generated script viewer
-│       ├── StrategyCard.tsx        # AI strategy display
-│       ├── DesignProgress.tsx      # Generation progress indicator
-│       └── TimelineView.tsx        # Horizontal scene timeline
+│   ├── architect/                  # Viral Architect components
+│   │   ├── SceneRow.tsx            # Individual scene controls
+│   │   ├── ScriptCard.tsx          # Generated script viewer
+│   │   ├── StrategyCard.tsx        # AI strategy display
+│   │   ├── DesignProgress.tsx      # Generation progress indicator
+│   │   └── TimelineView.tsx        # Horizontal scene timeline
+│   └── editor/                     # Video editor components
+│       ├── ClipContextMenu.tsx     # Clip right-click menu
+│       ├── ClipInspector.tsx       # Clip properties panel
+│       ├── EditorPreview.tsx       # Editor preview canvas
+│       ├── EditorTimeline.tsx      # Timeline interface
+│       ├── EditorToolbar.tsx       # Editor toolbar controls
+│       ├── ExportDialog.tsx        # Export settings dialog
+│       ├── ImportMediaModal.tsx    # Media import dialog
+│       ├── TimelineClip.tsx        # Timeline clip component
+│       └── ToastContainer.tsx      # Toast notifications container
 └── lib/
+    ├── editorStore.ts              # Video editor state management
+    ├── mediaCache.ts               # Media caching utility
+    ├── probeVideoDuration.ts       # Video duration probing
     ├── refreshTaskImages.ts        # Task image URL refresh utility
     ├── store.ts                    # Zustand store (state + persistence)
+    ├── toastStore.ts               # Toast notification state
     ├── useArchitectActions.ts      # Architect business logic hook
     ├── useDirectorContext.ts       # AI Director context builder
     ├── useMosaicPolling.ts         # Mosaic-level polling hook
     ├── usePoll.ts                  # Generic async polling utility
     ├── useStudioHandlers.ts        # Studio interaction hook
+    ├── useWaveform.ts              # Audio waveform generation hook
     └── utils.ts                    # Shared helpers (download, etc.)
 ```
 
