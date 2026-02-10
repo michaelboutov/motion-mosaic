@@ -166,6 +166,10 @@ export function useArchitectActions() {
         throw err
       }
 
+      if (!data.scenes || !Array.isArray(data.scenes)) {
+        throw new Error('Invalid response format: scenes array missing or malformed')
+      }
+
       setArchitectState({
         strategy: data.strategy,
         script: data.script,
